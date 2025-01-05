@@ -1,0 +1,3 @@
+[submodule "src/pimbs"]
+	path = src/pimbs
+	url = https://github.com/visendev/pimbs.git
