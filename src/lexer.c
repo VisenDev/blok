@@ -358,6 +358,7 @@ blok_lexer_get_token(struct blok_lexer * lex) {
     return blok_lexer_err_none;
 }
 
+/*
 #include <stdio.h>
 #include <string.h>
 
@@ -375,8 +376,6 @@ void blok_lexer_print_token(struct blok_lexer * lex) {
     }
 }
 
-
-
 int main() {
     #define len 100000
     #define input "[asdf [ 1.123 \"hello world\" ][] 12.3.3 ]"
@@ -393,3 +392,4 @@ int main() {
 
     return 0;
 }
+*/
