@@ -45,6 +45,33 @@ typedef struct {
     int heap_i;
 } Lisp;
 
+#define max_token_len 1024
+char * get_token(FILE * fp) {
+    static char buf[max_token_len];
+    long i = 0;
+    if(feof(fp)) {
+        return NULL;
+    } else {
+        char ch = fgetc(fp);
+        /*skip leading whitespace*/
+        while(isspace(ch) && !feof(fp)) {
+            ch = fgetc(fp);
+        }
+
+        for(i = 0; !feof(fp); ++i) {
+            if(i > sizeof(buf)) fatal_error("Token is too long: %s", buf);
+            buf[i] = ch;
+            buf[i + 1] = 0;
+            ch = fgetc(fp);
+            if(ch == '(' || ch == ')' || ch == '"' || ch == '\'' || isspace(ch)) {
+                ungetc(ch, fp);
+                break;
+            }
+        }
+    }
+    return buf;
+}
+
 Object * new_object(Lisp * l) {
     if(l->heap_i > HEAP_SIZE) {
         fatal_error("Out of memory");
@@ -54,19 +81,55 @@ Object * new_object(Lisp * l) {
     return &l->heap[l->heap_i - 1];
 }
 
-Object * read_file(Lisp * l, FILE * fp) {
+int streql(const char * a, const char * b) {
+    return strncmp(a, b, max_token_len) == 0;
+}
+
+Object * parse_file(Lisp * l, FILE * fp) {
     Object * root = new_object(l);
-    char tok[1024] = {0};
-    int tok_i = 0;
-    char ch = fgetc(fp);
+    Object * next = root;
+    enum {
+        STATE_START,
+        STATE_NUMBER,
+        STATE_FLOAT,
+        STATE_STRING,
+    } state;
+    int depth = 0;
     while(!feof(fp)) {
-        switch(ch) {
-        case '('
+        char * tok = get_token(fp);
+        switch(state) {
+        case STATE_START:
+            if(streql("(", tok)) {
+                ++depth;
+                next->tag = TAG_CONS;
+                next->value.cons.car = parse_file(l, fp);
+                next->value.cons.cdr = new_object(l);
+                next = next->value.cons.cdr;
+            } else if(streql(")", tok)) {
+                if(depth <= 0) {
+                    fatal_error("Unexpected end of input");
+                } else {
+                    --depth;
+                    next->tag = TAG_NIL;
+                }
+            } else if(streql("\"", tok)) {
+                char ch = fgetc(fp);
+                char str[1024] = {0};
+                int str_i = 0;
+                while(!feof(fp) && ch != '"') {
+                    if(str_i >= sizeof(str)) fatal_error("String too long");
+                    str[str_i] = ch; 
+                    str[str_i + 1] = 0; 
+                }
+                next->tag = TAG_STRING;
+                next->value.string = strdup(str); /*TODO: do this in a way that does not leak memory*/
 
+            }
 
-
+            break;
         }
     }
+    return root;
 }
 
 
