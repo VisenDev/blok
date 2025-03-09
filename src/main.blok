@@ -1,0 +1,21 @@
+;; ** top-level-eval **
+
+[def foo = 10]
+[print foo]
+[def dotimes
+        [count int]
+        [var template]
+        [block template]
+    = 
+    [when [gte count 0]
+        [def var = count] 
+        block
+        [dotimes [minus count 1] var block]
+        ]]
+    
+
+[dotimes [plus 5 5] i [print i]]
+
+
+
+
