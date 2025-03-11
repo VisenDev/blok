@@ -16,15 +16,20 @@ void fatal_error(const char * fmt, ...) {
     abort();
 }
 
+
+
 typedef enum {
     TAG_NIL,
     TAG_INTEGER,
     TAG_STRING,
     TAG_SYMBOL,
     TAG_LIST,
+    TAG_PRIMITIVE,
+    TAG_TABLE,
 } Tag;
 
 struct Obj;
+struct Env;
 
 typedef struct {
     struct Obj * items;
@@ -38,37 +43,68 @@ typedef struct {
     int cap;
 } String;
 
+typedef struct {
+    int lookup_index;
+} Symbol;
+
+typedef struct {
+    List dense;
+    List dense_to_sparse_mapping;
+    List sparse;
+} Table;
+
+typedef struct Obj (*Primitive)(struct Obj * env, int argc, struct Obj * argv);
+
 typedef struct Obj {
     Tag tag;
     union {
         int integer;
-        String str; /*string or symbol*/
+        Symbol symbol;
+        String string;
+        Primitive primitive;
         List list;
+        Table table;
     } as;
 } Obj; 
 
+/* Symbol handling */
+#define max_symbols 4096
+#define max_symbol_len 128
+static char symbols[max_symbols][max_symbol_len];
+static int symbols_len;
+
+
+int streql(const char * a, const char * b) {
+    return strncmp(a, b, max_symbol_len) == 0;
+}
+
 /* Constructors*/
-Obj make_integer(int value) {
-    Obj result = {0};
-    result.tag = TAG_INTEGER;
-    result.as.integer = value;
-    return result;
-}
-
-Obj make_string(const char * string) {
-    Obj result = {0};
-    result.tag = TAG_STRING;
-    result.as.str.items = strdup(string);
-    result.as.str.len = strlen(result.as.str.items);
-    result.as.str.cap = result.as.str.len;
-    return result;
-}
-
-Obj make_symbol(const char * symbol) {
-    Obj result = make_string(symbol);
+Obj make_symbol(const char * name) {
+    Obj result = {0}; 
     result.tag = TAG_SYMBOL;
+    int i = 0;
+    for(i = 0; i < symbols_len; ++i) {
+        if(streql(name, symbols[i])) {
+            result.as.symbol.lookup_index = i;
+            return result;
+        }
+    }
+    if(symbols_len >= max_symbol_len) {
+        fatal_error("Symbol storage array overflow");
+    } 
+    memmove(symbols[symbols_len], name, strlen(name));
+    ++symbols_len;
+    result.as.symbol.lookup_index = symbols_len - 1;
     return result;
 }
+
+Obj make_primitive(Primitive fn) {
+    Obj result = {0}; 
+    result.tag = TAG_PRIMITIVE;
+    result.as.primitive = fn;
+    return result;
+}
+
 
 Obj make_list(int initial_capacity) {
     Obj result = {0};
@@ -80,43 +116,72 @@ Obj make_list(int initial_capacity) {
     return result;
 }
 
+
+Obj make_integer(int value) {
+    Obj result = {0};
+    result.tag = TAG_INTEGER;
+    result.as.integer = value;
+    return result;
+}
+
+Obj make_string(const char * string) {
+    Obj result = {0};
+    result.tag = TAG_STRING;
+    result.as.string.items = strdup(string);
+    result.as.string.len = strlen(result.as.string.items);
+    result.as.string.cap = result.as.string.len;
+    return result;
+}
+
+
 Obj make_nil(void) {
     Obj result = {0};
     result.tag = TAG_NIL;
     return result;
 }
 
-/* Utility functions */
-void list_push(Obj * self, Obj item) {
-    if(self->tag != TAG_LIST) {
-        fatal_error("Attempted to push item to non-list: %p", self); 
-    }
-    if(self->as.list.cap == 0) {
-        self->as.list.cap = 8;
-        self->as.list.cap = 0;
-        self->as.list.items = malloc(sizeof(Obj) * self->as.list.cap);
-    } else if(self->as.list.len >= self->as.list.cap) {
-        self->as.list.cap *= 2;
-        self->as.list.items = realloc(self->as.list.items, self->as.list.cap * sizeof(Obj));
-    }
-    self->as.list.items[self->as.list.len] = item;
-    ++self->as.list.len;
+Obj make_table(void) {
+    Obj result = {0};
+    result.tag = TAG_TABLE;
+    result.as.table.sparse = make_list(0).as.list;
+    result.as.table.dense = make_list(0).as.list;
+    result.as.table.dense_to_sparse_mapping = make_list(0).as.list;
+    return result;
 }
 
-Obj list_pop(Obj * self) {
-    if(self->tag != TAG_LIST) {
-        fatal_error("Attempted to pop item from non-list: %p", self); 
+/* Utility functions */
+void list_push(List * self, Obj item) {
+    if(self->cap == 0) {
+        self->cap = 8;
+        self->cap = 0;
+        self->items = malloc(sizeof(Obj) * self->cap);
+    } else if(self->len >= self->cap) {
+        self->cap *= 2;
+        self->items = realloc(self->items, self->cap * sizeof(Obj));
     }
-    --self->as.list.len;
-    return self->as.list.items[self->as.list.len];
+    self->items[self->len] = item;
+    ++self->len;
 }
+
+Obj list_pop(List * self) {
+    --self->len;
+    return self->items[self->len];
+}
+
+/* Table utilities */
+void table_set(Table * self, Symbol key, Obj value) {
+    if(self->sparse.len < key.lookup_index) {
+        const Obj i = self->sparse.items[key.lookup_index];
+        if(i.tag == 
+    }
+}
+
 
 void obj_free_recursive(Obj * self) { 
     int i = 0;
     switch(self->tag) {
     case TAG_STRING:
-    case TAG_SYMBOL:
-        free(self->as.str.items);
+        free(self->as.string.items);
         break;
     case TAG_LIST:
         for(int i = 0; i < self->as.list.len; ++i) {
@@ -132,6 +197,7 @@ void obj_free_recursive(Obj * self) {
 
 
 /* Parser */
+/*
 #define max_token_len 1024
 char * get_token(FILE * fp) {
     static char buf[max_token_len];
@@ -140,7 +206,6 @@ char * get_token(FILE * fp) {
         return NULL;
     } else {
         char ch = fgetc(fp);
-        /*skip leading whitespace*/
         while(isspace(ch) && !feof(fp)) {
             ch = fgetc(fp);
         }
@@ -158,11 +223,18 @@ char * get_token(FILE * fp) {
     }
     return buf;
 }
+*/
 
-
-int streql(const char * a, const char * b) {
-    return strncmp(a, b, max_token_len) == 0;
+int is_number(const char * str) {
+    int i = 0;
+    for(i = 0; str[i] != 0; ++i) {
+        if(!isdigit(str[i])) {
+            return 0;
+        }
+    }
+    return 1;
 }
+
 
 /* expects that the opening " has already been parsed */
 Obj parse_string(FILE * fp) {
@@ -202,16 +274,27 @@ Obj parse_string(FILE * fp) {
 
 }
 
+Obj parse_expr(FILE * fp) {
+    char * tok = get_token(fp);
+    if(streql(tok, "\"")){
+        return parse_string(fp);
+    } else if(is_number(tok)) {
+        return make_integer(atoi(tok));
+    } else if(streql(tok, "'")) {
+        Obj quoted = make_list(2);
+        list_push(&quoted, make_symbol("quote"));
+        list_push(&quoted, parse_expr(fp));
+        return quoted;
+    }
+}
+
 /*expects that the opening bracket has been parsed*/
 Obj parse_list(FILE * fp) {
     Obj root = make_list(0);
-    char * tok = get_token(fp);
-    while(tok != NULL && !streql("]", tok)) {
-        if(streql(tok, "\"")){
-            list_push(&root, parse_string(fp));
-        } else if() {
-
-        }
+    /*char * tok = get_token(fp);*/
+    while(tok != NULL) {
+        list_push(&root, parse_expr(fp));
+        /*tok = get_token(fp);*/
     }
 }
 
