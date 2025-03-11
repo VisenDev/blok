@@ -81,12 +81,31 @@ Object * new_object(Lisp * l) {
     return &l->heap[l->heap_i - 1];
 }
 
+Object * cons(Lisp * l, Object * car, Object * cdr) {
+    Object * result = new_object(l);
+    result->tag = TAG_CONS;
+    result->value.cons.car = car;
+    result->value.cons.cdr = cdr;
+    return result;
+}
+
 int streql(const char * a, const char * b) {
     return strncmp(a, b, max_token_len) == 0;
 }
 
-Object * parse_file(Lisp * l, FILE * fp) {
-    Object * root = new_object(l);
+
+/* (defun main() 0)
+ * 123
+ * '(1 2 3 4)
+ */
+
+/* (Object){
+ *    .tag = TAG_CONS
+ *    .value.cons.cdr = (Object){
+ *                                 .tag = */
+
+Object * read(Lisp * l, FILE * fp) {
+    Object * root = NULL;
     Object * next = root;
     enum {
         STATE_START,
@@ -102,7 +121,7 @@ Object * parse_file(Lisp * l, FILE * fp) {
             if(streql("(", tok)) {
                 ++depth;
                 next->tag = TAG_CONS;
-                next->value.cons.car = parse_file(l, fp);
+                next->value.cons.car = read(l, fp);
                 next->value.cons.cdr = new_object(l);
                 next = next->value.cons.cdr;
             } else if(streql(")", tok)) {
