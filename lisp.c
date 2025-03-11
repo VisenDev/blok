@@ -130,6 +130,102 @@ void obj_free_recursive(Obj * self) {
     self->tag = TAG_NIL;
 }
 
+
+/* Parser */
+#define max_token_len 1024
+char * get_token(FILE * fp) {
+    static char buf[max_token_len];
+    long i = 0;
+    if(feof(fp)) {
+        return NULL;
+    } else {
+        char ch = fgetc(fp);
+        /*skip leading whitespace*/
+        while(isspace(ch) && !feof(fp)) {
+            ch = fgetc(fp);
+        }
+
+        for(i = 0; !feof(fp); ++i) {
+            if(i > sizeof(buf)) fatal_error("Token is too long: %s", buf);
+            buf[i] = ch;
+            buf[i + 1] = 0;
+            ch = fgetc(fp);
+            if(ch == '(' || ch == ')' || ch == '"' || ch == '\'' || isspace(ch)) {
+                ungetc(ch, fp);
+                break;
+            }
+        }
+    }
+    return buf;
+}
+
+
+int streql(const char * a, const char * b) {
+    return strncmp(a, b, max_token_len) == 0;
+}
+
+/* expects that the opening " has already been parsed */
+Obj parse_string(FILE * fp) {
+    char buf[max_token_len] = {0};
+    int i = 0;
+    int slash_mode = 0;
+    char ch = fgetc(fp);
+    
+    while(!feof(fp)) {
+        if(slash_mode) {
+            if(ch == '"') {
+                buf[i] = '"';
+                ++i;
+            } else if(ch == 'n') {
+                buf[i] = '\n';
+                ++i;
+            } else if(ch == '\\') {
+                buf[i] = '\\';
+                ++i;
+            } else {
+                fatal_error("Invalid escape sequence found in string");
+            }
+            slash_mode = 0;
+        } else {
+            if(ch == '"') {
+                break;      
+            } else if(ch == '\\') {
+                slash_mode = 1;
+            } else {
+                buf[i] = ch;
+                ++i;
+            }
+        }
+        ch = fgetc(fp);
+    }
+    return make_string(buf);
+
+}
+
+/*expects that the opening bracket has been parsed*/
+Obj parse_list(FILE * fp) {
+    Obj root = make_list(0);
+    char * tok = get_token(fp);
+    while(tok != NULL && !streql("]", tok)) {
+        if(streql(tok, "\"")){
+            list_push(&root, parse_string(fp));
+        } else if() {
+
+        }
+    }
+}
+
+Obj read(FILE * fp) {
+    Obj root = make_list(8);
+    char * tok = get_token(fp);
+
+    while(tok != NULL) {
+        
+    }
+
+    return root;
+}
+
 int main() {
     printf("size: %zu\n", sizeof(Obj));
     return 0;
