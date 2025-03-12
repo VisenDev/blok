@@ -56,6 +56,7 @@ typedef struct {
 typedef struct Obj (*Primitive)(struct Obj * env, int argc, struct Obj * argv);
 
 typedef struct Obj {
+    char is_const; /*this is a boolean (stored in a char)*/
     Tag tag;
     union {
         int integer;
@@ -149,33 +150,6 @@ Obj make_table(void) {
     return result;
 }
 
-/* Utility functions */
-void list_push(List * self, Obj item) {
-    if(self->cap == 0) {
-        self->cap = 8;
-        self->cap = 0;
-        self->items = malloc(sizeof(Obj) * self->cap);
-    } else if(self->len >= self->cap) {
-        self->cap *= 2;
-        self->items = realloc(self->items, self->cap * sizeof(Obj));
-    }
-    self->items[self->len] = item;
-    ++self->len;
-}
-
-Obj list_pop(List * self) {
-    --self->len;
-    return self->items[self->len];
-}
-
-/* Table utilities */
-void table_set(Table * self, Symbol key, Obj value) {
-    if(self->sparse.len < key.lookup_index) {
-        const Obj i = self->sparse.items[key.lookup_index];
-        if(i.tag == 
-    }
-}
-
 
 void obj_free_recursive(Obj * self) { 
     int i = 0;
@@ -194,6 +168,121 @@ void obj_free_recursive(Obj * self) {
     }
     self->tag = TAG_NIL;
 }
+
+/* Utility functions */
+
+void list_ensure_capacity(List * self, int new_cap) {
+    if(self->cap == 0) {
+        self->cap = new_cap;
+        self->len= 0;
+        self->items = malloc(sizeof(Obj) * self->cap);
+    } else if(self->cap < new_cap) {
+        self->cap = new_cap;
+        self->items = realloc(self->items, self->cap * sizeof(Obj));
+    }
+}
+
+void list_push(List * self, Obj item) {
+    if(self->len >= self->cap) {
+        list_ensure_capacity(self, self->cap * 2 + 1);
+    }
+    self->items[self->len] = item;
+    ++self->len;
+}
+
+Obj list_pop(List * self) {
+    --self->len;
+    return self->items[self->len];
+}
+
+Obj list_get(const List * self, int i) {
+    if(i <= 0 || i > self->len) {
+        return make_nil();
+    } else {
+        return self->items[i];
+    }
+}
+
+
+void list_set(const List * self, int i, Obj value) {
+    assert(i >= 0);
+    if(i >
+}
+
+/*Duplication functions */
+Obj obj_dup_recursive(const Obj self);
+
+Obj list_duplicate(const List * self) {
+    int i = 0;
+    Obj result = make_list(self->len);
+    for(i = 0; i < self->len; ++i) {
+        list_push(&result.as.list, obj_dup_recursive(self->items[i]));
+    }
+    return result;
+}
+
+Obj table_duplicate(const Table * self) {
+    Obj result = make_table();
+    result.as.table.dense = list_duplicate(&self->dense).as.list;
+    result.as.table.sparse = list_duplicate(&self->sparse).as.list;
+    result.as.table.dense_to_sparse_mapping = list_duplicate(&self->dense_to_sparse_mapping).as.list;
+    return result;
+}
+
+
+/* Duplicate an object */
+Obj obj_dup_recursive(const Obj self) {
+    switch(self.tag) {
+    case TAG_STRING:
+        return make_string(self.as.string.items);
+    case TAG_NIL:
+        return make_nil();
+    case TAG_INTEGER:
+        return make_integer(self.as.integer);
+    case TAG_LIST: 
+        return list_duplicate(&self.as.list);
+    case TAG_PRIMITIVE:
+        return make_primitive(self.as.primitive);
+    case TAG_SYMBOL:
+        return self;
+    case TAG_TABLE:
+        return table_duplicate(&self.as.table);
+    }
+}
+
+/* Table utilities */
+Obj table_get(Table * self, Symbol key) {
+    const Obj i = list_get(&self->sparse, key.lookup_index);
+    if(i.tag == TAG_NIL) {
+        return make_nil();
+    } else {
+        assert(i.tag == TAG_INTEGER && "invalid type"); 
+        assert(i.as.integer >= 0);
+        assert(i.as.integer < self->dense.len);
+        return obj_dup_recursive(list_get(&self->dense, i.as.integer));
+    }
+}
+
+void table_set(Table * self, Symbol key, Obj value) {
+    const Obj i = list_get(&self->sparse, key.lookup_index);
+    if(i.tag == TAG_NIL) {
+        /*append new*/
+        
+        /*get dense index*/
+        const int j = self->dense.len;
+        list_push(&self->dense, obj_dup_recursive(value));
+         
+    } else {
+        /*replace existing*/
+        assert(i.tag == TAG_INTEGER && "invalid type"); 
+        assert(i.as.integer >= 0);
+        assert(i.as.integer < self->dense.len);
+        obj_free_recursive(&self->dense.items[i.as.integer]);
+        self->dense.items[i.as.integer] = obj_dup_recursive(value);
+    }
+}
+
+
 
 
 /* Parser */
