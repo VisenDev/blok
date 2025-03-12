@@ -298,34 +298,6 @@ void table_set(Table * self, Symbol key, Obj value) {
 
 
 /* Parser */
-/*
-#define max_token_len 1024
-char * get_token(FILE * fp) {
-    static char buf[max_token_len];
-    long i = 0;
-    if(feof(fp)) {
-        return NULL;
-    } else {
-        char ch = fgetc(fp);
-        while(isspace(ch) && !feof(fp)) {
-            ch = fgetc(fp);
-        }
-
-        for(i = 0; !feof(fp); ++i) {
-            if(i > sizeof(buf)) fatal_error("Token is too long: %s", buf);
-            buf[i] = ch;
-            buf[i + 1] = 0;
-            ch = fgetc(fp);
-            if(ch == '(' || ch == ')' || ch == '"' || ch == '\'' || isspace(ch)) {
-                ungetc(ch, fp);
-                break;
-            }
-        }
-    }
-    return buf;
-}
-*/
-
 int is_number(const char * str) {
     int i = 0;
     for(i = 0; str[i] != 0; ++i) {
@@ -336,82 +308,150 @@ int is_number(const char * str) {
     return 1;
 }
 
-#if 0
-/* expects that the opening " has already been parsed */
-Obj parse_string(FILE * fp) {
-    char buf[max_token_len] = {0};
-    int i = 0;
-    int slash_mode = 0;
-    char ch = fgetc(fp);
-    
-    while(!feof(fp)) {
-        if(slash_mode) {
-            if(ch == '"') {
-                buf[i] = '"';
-                ++i;
-            } else if(ch == 'n') {
-                buf[i] = '\n';
-                ++i;
-            } else if(ch == '\\') {
-                buf[i] = '\\';
-                ++i;
-            } else {
-                fatal_error("Invalid escape sequence found in string");
-            }
-            slash_mode = 0;
-        } else {
-            if(ch == '"') {
-                break;      
-            } else if(ch == '\\') {
-                slash_mode = 1;
-            } else {
-                buf[i] = ch;
-                ++i;
-            }
-        }
-        ch = fgetc(fp);
-    }
-    return make_string(buf);
-
+char peek(FILE * fp) {
+    const char ch = fgetc(fp);
+    ungetc(ch, fp);
+    return ch;
 }
+
+int is_special_character(char ch) {
+    return ch == '['
+        || ch == ']'
+        || ch == '.'
+        || ch == ':'
+        || ch == '\''
+        || ch == '"'
+        || ch == '`';
+}
+
+Obj parse_integer(FILE * fp) {
+    char buf[1024] = {0};
+    int i = 0;
+    /*printf("parsing integer");*/
+    while(isdigit(peek(fp))) {
+        buf[i] = fgetc(fp);
+        ++i;
+    }
+    return make_integer(atoi(buf));
+}
+
+void skip_whitespace(FILE * fp) {
+    while(isspace(peek(fp))) {
+        fgetc(fp);
+    }
+}
+
+Obj parse_symbol(FILE * fp) {
+    char buf [1024] = {0};
+    int i = 0;
+    skip_whitespace(fp);
+    while(!is_special_character(peek(fp)) && !isspace(peek(fp)) && !feof(fp)) {
+        buf[i] = fgetc(fp);
+        ++i;
+    }
+    return make_symbol(buf);
+}
+
+Obj parse_string(FILE * fp) {
+    char buf[1024] = {0};
+    int i = 0;
+    /*printf("parsing string");*/
+    assert(fgetc(fp) == '"');
+    while(peek(fp) != '"') {
+        if(feof(fp)) {
+            fatal_error("unexpected end of input when parsing string");
+        }
+        buf[i] = fgetc(fp);
+        ++i;
+    }
+    assert(fgetc(fp) == '"');
+    return make_string(buf);
+}
+
+Obj parse_list(FILE * fp);
 
 Obj parse_expr(FILE * fp) {
-    char * tok = get_token(fp);
-    if(streql(tok, "\"")){
+    if(peek(fp) == '"') {
         return parse_string(fp);
-    } else if(is_number(tok)) {
-        return make_integer(atoi(tok));
-    } else if(streql(tok, "'")) {
-        Obj quoted = make_list(2);
-        list_push(&quoted, make_symbol("quote"));
-        list_push(&quoted, parse_expr(fp));
-        return quoted;
+    } else if(peek(fp) == '\'') {
+        /* TODO quote reader macro*/
+        fatal_error("quote not implemented yet");
+    } else if(isdigit(peek(fp))) {
+        return parse_integer(fp); 
+    } else if (peek(fp) == '[') {
+        return parse_list(fp);
+    } else /*if (!is_special_character(peek(fp))) {*/ {
+        return parse_symbol(fp);
     }
+#if 0
+    else {
+        /*fatal_error("parsing failed on char %c", fgetc(fp));*/
+        printf("unparsed ch: %c", fgetc(fp));
+    }
+#endif
+    return make_nil();
 }
 
-/*expects that the opening bracket has been parsed*/
 Obj parse_list(FILE * fp) {
-    Obj root = make_list(0);
-    /*char * tok = get_token(fp);*/
-    while(tok != NULL) {
-        list_push(&root, parse_expr(fp));
-        /*tok = get_token(fp);*/
+    Obj result = make_list(8);
+    /*printf("parsing list");*/
+    assert(fgetc(fp) == '[');
+    while(peek(fp) != ']') {
+        while(isspace(peek(fp))) {
+            fgetc(fp);
+        }
+        list_push(&result.as.list, parse_expr(fp));
     }
+    assert(fgetc(fp) == ']');
+    return result;
 }
 
 Obj read(FILE * fp) {
     Obj root = make_list(8);
-    char * tok = get_token(fp);
 
-    while(tok != NULL) {
-        
+    while(!feof(fp)) {
+        list_push(&root.as.list, parse_expr(fp));
     }
 
     return root;
 }
 
-#endif
+void write(FILE * fp, Obj val) {
+    int i = 0;
+    switch(val.tag) {
+    case TAG_NIL:
+        fprintf(fp, "nil");
+        break;
+    case TAG_INTEGER:
+        fprintf(fp, "%d", val.as.integer);
+        break;
+    case TAG_LIST:
+        fprintf(fp, "[");
+        for(i = 0; i < val.as.list.len; ++i) {
+            if(i != 0) fprintf(fp, " ");
+            write(fp, val.as.list.items[i]);
+        }
+        fprintf(fp, "]");
+        break;
+    case TAG_PRIMITIVE:
+        fprintf(fp, "<Primitive %p>", val.as.primitive);
+        break;
+    case TAG_STRING:
+        fprintf(fp, "\"%s\"", val.as.string.items);
+        break;
+    case TAG_SYMBOL:
+        fprintf(fp, "%s", symbols[val.as.symbol.lookup_index]);
+        break;
+    case TAG_TABLE:
+        fatal_error("writing tables not implemented yet");
+        break;
+    }
+}
+
 int main() {
-    printf("size: %zu\n", sizeof(Obj));
+    FILE * fp = fopen("test.blok", "r");
+    Obj val = read(fp);
+    fclose(fp);
+    write(stdout, val);
     return 0;
 }

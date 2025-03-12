@@ -1,10 +1,10 @@
 [defun isspace [ch]
-  [return [or [== ' ' ch] [== '\n' ch] ] ]
+  [return [or [== ch] [== ch] ] ]
 ]
 
 
 [defun main []
   [printf "Hello world\n"]
-  [printf "%d" [isspace ' ']]
+  [printf "%d" [isspace ]]
   [return 0]
 ]
