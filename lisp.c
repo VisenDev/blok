@@ -169,8 +169,11 @@ void obj_free_recursive(Obj * self) {
     self->tag = TAG_NIL;
 }
 
-/* Utility functions */
 
+/*prototype for duplication*/
+Obj obj_dup_recursive(const Obj self);
+
+/* Utility functions */
 void list_ensure_capacity(List * self, int new_cap) {
     if(self->cap == 0) {
         self->cap = new_cap;
@@ -182,11 +185,12 @@ void list_ensure_capacity(List * self, int new_cap) {
     }
 }
 
+/* item is copied not referenced */
 void list_push(List * self, Obj item) {
     if(self->len >= self->cap) {
         list_ensure_capacity(self, self->cap * 2 + 1);
     }
-    self->items[self->len] = item;
+    self->items[self->len] = obj_dup_recursive(item);
     ++self->len;
 }
 
@@ -199,19 +203,24 @@ Obj list_get(const List * self, int i) {
     if(i <= 0 || i > self->len) {
         return make_nil();
     } else {
-        return self->items[i];
+        return obj_dup_recursive(self->items[i]);
     }
 }
 
-
-void list_set(const List * self, int i, Obj value) {
+void list_set(List * self, int i, Obj value) {
     assert(i >= 0);
-    if(i >
+    if(i >= self->len) {
+        int j = 0;
+        list_ensure_capacity(self, i + 1);
+        for(j = 0; j < i + 1; ++j) {
+            list_push(self, make_nil());
+        }
+    }
+    obj_free_recursive(&self->items[i]);
+    self->items[i] = obj_dup_recursive(value);
 }
 
 /*Duplication functions */
-Obj obj_dup_recursive(const Obj self);
-
 Obj list_duplicate(const List * self) {
     int i = 0;
     Obj result = make_list(self->len);
@@ -271,7 +280,10 @@ void table_set(Table * self, Symbol key, Obj value) {
         /*get dense index*/
         const int j = self->dense.len;
         list_push(&self->dense, obj_dup_recursive(value));
-         
+        list_push(&self->dense_to_sparse_mapping, make_integer(key.lookup_index));
+        
+        /* set sparse index */
+        list_set(&self->sparse, key.lookup_index, make_integer(j));
     } else {
         /*replace existing*/
         assert(i.tag == TAG_INTEGER && "invalid type"); 
@@ -324,7 +336,7 @@ int is_number(const char * str) {
     return 1;
 }
 
-
+#if 0
 /* expects that the opening " has already been parsed */
 Obj parse_string(FILE * fp) {
     char buf[max_token_len] = {0};
@@ -398,6 +410,7 @@ Obj read(FILE * fp) {
     return root;
 }
 
+#endif
 int main() {
     printf("size: %zu\n", sizeof(Obj));
     return 0;
