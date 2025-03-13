@@ -17,16 +17,12 @@ void fatal_error(const char * fmt, ...) {
 }
 
 
-
-typedef enum {
-    TAG_NIL,
-    TAG_INTEGER,
-    TAG_STRING,
-    TAG_SYMBOL,
-    TAG_LIST,
-    TAG_PRIMITIVE,
-    TAG_TABLE,
-} Tag;
+#define    TAG_NIL 0
+#define    TAG_INTEGER 1
+#define    TAG_STRING 2
+#define    TAG_SYMBOL 3
+#define    TAG_LIST 4
+#define    TAG_PRIMITIVE 5
 
 struct Obj;
 struct Env;
@@ -47,26 +43,21 @@ typedef struct {
     int lookup_index;
 } Symbol;
 
-typedef struct {
-    List dense;
-    List dense_to_sparse_mapping;
-    List sparse;
-} Table;
-
 typedef struct Obj (*Primitive)(struct Obj * env, int argc, struct Obj * argv);
 
 typedef struct Obj {
-    char is_const; /*this is a boolean (stored in a char)*/
-    Tag tag;
+    char tag;
     union {
         int integer;
         Symbol symbol;
-        String string;
         Primitive primitive;
-        List list;
-        Table table;
+        String * string;
+        List * list;
+        /*Table table;*/
     } as;
 } Obj; 
+
+
 
 /* Symbol handling */
 #define max_symbols 4096
@@ -111,9 +102,10 @@ Obj make_list(int initial_capacity) {
     Obj result = {0};
     assert(initial_capacity >= 0);
     result.tag = TAG_LIST;
-    result.as.list.items = malloc(sizeof(Obj) * initial_capacity);
-    result.as.list.len = 0;
-    result.as.list.cap = initial_capacity;
+    result.as.list = malloc(sizeof(List));
+    result.as.list->items = malloc(sizeof(Obj) * initial_capacity);
+    result.as.list->len = 0;
+    result.as.list->cap = initial_capacity;
     return result;
 }
 
@@ -128,9 +120,10 @@ Obj make_integer(int value) {
 Obj make_string(const char * string) {
     Obj result = {0};
     result.tag = TAG_STRING;
-    result.as.string.items = strdup(string);
-    result.as.string.len = strlen(result.as.string.items);
-    result.as.string.cap = result.as.string.len;
+    result.as.list = malloc(sizeof(String));
+    result.as.string->items = strdup(string);
+    result.as.string->len = strlen(result.as.string->items);
+    result.as.string->cap = result.as.string->len;
     return result;
 }
 
@@ -141,27 +134,18 @@ Obj make_nil(void) {
     return result;
 }
 
-Obj make_table(void) {
-    Obj result = {0};
-    result.tag = TAG_TABLE;
-    result.as.table.sparse = make_list(0).as.list;
-    result.as.table.dense = make_list(0).as.list;
-    result.as.table.dense_to_sparse_mapping = make_list(0).as.list;
-    return result;
-}
-
-
 void obj_free_recursive(Obj * self) { 
     int i = 0;
     switch(self->tag) {
     case TAG_STRING:
-        free(self->as.string.items);
+        free(self->as.string->items);
         break;
     case TAG_LIST:
-        for(int i = 0; i < self->as.list.len; ++i) {
-            obj_free_recursive(&self->as.list.items[i]);
+        for(int i = 0; i < self->as.list->len; ++i) {
+            obj_free_recursive(&self->as.list->items[i]);
         }
-        free(self->as.list.items);
+        free(self->as.list->items);
+        free(self->as.list);
         break;
     default:
         break;
@@ -225,77 +209,31 @@ Obj list_duplicate(const List * self) {
     int i = 0;
     Obj result = make_list(self->len);
     for(i = 0; i < self->len; ++i) {
-        list_push(&result.as.list, obj_dup_recursive(self->items[i]));
+        list_push(result.as.list, obj_dup_recursive(self->items[i]));
     }
     return result;
 }
-
-Obj table_duplicate(const Table * self) {
-    Obj result = make_table();
-    result.as.table.dense = list_duplicate(&self->dense).as.list;
-    result.as.table.sparse = list_duplicate(&self->sparse).as.list;
-    result.as.table.dense_to_sparse_mapping = list_duplicate(&self->dense_to_sparse_mapping).as.list;
-    return result;
-}
-
 
 /* Duplicate an object */
 Obj obj_dup_recursive(const Obj self) {
     switch(self.tag) {
     case TAG_STRING:
-        return make_string(self.as.string.items);
+        return make_string(self.as.string->items);
     case TAG_NIL:
         return make_nil();
     case TAG_INTEGER:
         return make_integer(self.as.integer);
     case TAG_LIST: 
-        return list_duplicate(&self.as.list);
+        return list_duplicate(self.as.list);
     case TAG_PRIMITIVE:
         return make_primitive(self.as.primitive);
     case TAG_SYMBOL:
         return self;
-    case TAG_TABLE:
-        return table_duplicate(&self.as.table);
-    }
-}
-
-/* Table utilities */
-Obj table_get(Table * self, Symbol key) {
-    const Obj i = list_get(&self->sparse, key.lookup_index);
-    if(i.tag == TAG_NIL) {
+    default:
+        fatal_error("invalid tag: %d", self.tag);
         return make_nil();
-    } else {
-        assert(i.tag == TAG_INTEGER && "invalid type"); 
-        assert(i.as.integer >= 0);
-        assert(i.as.integer < self->dense.len);
-        return obj_dup_recursive(list_get(&self->dense, i.as.integer));
     }
 }
-
-void table_set(Table * self, Symbol key, Obj value) {
-    const Obj i = list_get(&self->sparse, key.lookup_index);
-    if(i.tag == TAG_NIL) {
-        /*append new*/
-        
-        /*get dense index*/
-        const int j = self->dense.len;
-        list_push(&self->dense, obj_dup_recursive(value));
-        list_push(&self->dense_to_sparse_mapping, make_integer(key.lookup_index));
-        
-        /* set sparse index */
-        list_set(&self->sparse, key.lookup_index, make_integer(j));
-    } else {
-        /*replace existing*/
-        assert(i.tag == TAG_INTEGER && "invalid type"); 
-        assert(i.as.integer >= 0);
-        assert(i.as.integer < self->dense.len);
-        obj_free_recursive(&self->dense.items[i.as.integer]);
-        self->dense.items[i.as.integer] = obj_dup_recursive(value);
-    }
-}
-
-
-
 
 /* Parser */
 int is_number(const char * str) {
@@ -336,7 +274,7 @@ Obj parse_integer(FILE * fp) {
 }
 
 void skip_whitespace(FILE * fp) {
-    while(isspace(peek(fp))) {
+    while(isspace(peek(fp)) || peek(fp) == '\n') {
         fgetc(fp);
     }
 }
@@ -348,6 +286,9 @@ Obj parse_symbol(FILE * fp) {
     while(!is_special_character(peek(fp)) && !isspace(peek(fp)) && !feof(fp)) {
         buf[i] = fgetc(fp);
         ++i;
+    }
+    if(i == 0) {
+        fatal_error("Parsing symbol failed on parsing char: %d", peek(fp));
     }
     return make_symbol(buf);
 }
@@ -380,27 +321,35 @@ Obj parse_expr(FILE * fp) {
         return parse_integer(fp); 
     } else if (peek(fp) == '[') {
         return parse_list(fp);
-    } else /*if (!is_special_character(peek(fp))) {*/ {
+    } else if (peek(fp) == ']') {
+        const long progress = ftell(fp);
+        long i = 0;
+        rewind(fp);
+        while(ftell(fp) < progress) {
+            fprintf(stderr, "%c", fgetc(fp));
+        }
+        fflush(stderr);
+        fatal_error("Unexpected end of input");
+    } else if (!is_special_character(peek(fp))) {
         return parse_symbol(fp);
+    } else {
+        fatal_error("Parsing failure");
     }
-#if 0
-    else {
-        /*fatal_error("parsing failed on char %c", fgetc(fp));*/
-        printf("unparsed ch: %c", fgetc(fp));
-    }
-#endif
     return make_nil();
 }
 
 Obj parse_list(FILE * fp) {
-    Obj result = make_list(8);
+    Obj result = make_list(0);
     /*printf("parsing list");*/
     assert(fgetc(fp) == '[');
+    skip_whitespace(fp);
+    if(peek(fp) == ']') {
+        return result;
+    }
     while(peek(fp) != ']') {
-        while(isspace(peek(fp))) {
-            fgetc(fp);
-        }
-        list_push(&result.as.list, parse_expr(fp));
+        skip_whitespace(fp);
+        list_push(result.as.list, parse_expr(fp));
+        skip_whitespace(fp);
     }
     assert(fgetc(fp) == ']');
     return result;
@@ -410,7 +359,7 @@ Obj read(FILE * fp) {
     Obj root = make_list(8);
 
     while(!feof(fp)) {
-        list_push(&root.as.list, parse_expr(fp));
+        list_push(root.as.list, parse_expr(fp));
     }
 
     return root;
@@ -427,9 +376,9 @@ void write(FILE * fp, Obj val) {
         break;
     case TAG_LIST:
         fprintf(fp, "[");
-        for(i = 0; i < val.as.list.len; ++i) {
+        for(i = 0; i < val.as.list->len; ++i) {
             if(i != 0) fprintf(fp, " ");
-            write(fp, val.as.list.items[i]);
+            write(fp, val.as.list->items[i]);
         }
         fprintf(fp, "]");
         break;
@@ -437,18 +386,16 @@ void write(FILE * fp, Obj val) {
         fprintf(fp, "<Primitive %p>", val.as.primitive);
         break;
     case TAG_STRING:
-        fprintf(fp, "\"%s\"", val.as.string.items);
+        fprintf(fp, "\"%s\"", val.as.string->items);
         break;
     case TAG_SYMBOL:
         fprintf(fp, "%s", symbols[val.as.symbol.lookup_index]);
-        break;
-    case TAG_TABLE:
-        fatal_error("writing tables not implemented yet");
         break;
     }
 }
 
 int main() {
+    printf("sizeof Obj: %zu\n\n", sizeof(Obj));
     FILE * fp = fopen("test.blok", "r");
     Obj val = read(fp);
     fclose(fp);

@@ -1,5 +1,5 @@
 [defun isspace [ch]
-    [return [or [== ch 10] [== ch 20]]]
+    [return [or [== ch 10] [== ch 20] ] ]
 ]
 
 [defstruct settings
@@ -8,14 +8,9 @@
     min
 ]
 
-[defun settings-table []
-    [return [make-settings indentation=1 count=10 min=1000}
-]
-
-
 [defun main []
     [local settings [settings-table]]
-    [printf settings.indentation
+    [printf settings.indentation]
     [printf "Hello world\n"]
     [printf "%d" [isspace ]]
     [return 0]
