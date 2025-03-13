@@ -312,10 +312,19 @@ Obj parse_string(FILE * fp) {
 Obj parse_list(FILE * fp);
 
 Obj parse_expr(FILE * fp) {
+    skip_whitespace(fp);
+    if(feof(fp)) {
+        return make_nil();
+    }
     if(peek(fp) == '"') {
         return parse_string(fp);
     } else if(peek(fp) == '\'') {
         /* TODO quote reader macro*/
+        fatal_error("quote not implemented yet");
+    } else if(peek(fp) == '.') {
+        /* TODO period reader macro*/
+        fgetc(fp);
+        return make_nil();
         fatal_error("quote not implemented yet");
     } else if(isdigit(peek(fp))) {
         return parse_integer(fp); 
@@ -344,6 +353,7 @@ Obj parse_list(FILE * fp) {
     assert(fgetc(fp) == '[');
     skip_whitespace(fp);
     if(peek(fp) == ']') {
+        fgetc(fp);
         return result;
     }
     while(peek(fp) != ']') {
