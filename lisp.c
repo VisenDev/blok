@@ -441,6 +441,60 @@ Obj eval_expr(Obj * env, Obj expr) {
     return expr;
 }
 
+int eql(const Obj lhs, const Obj rhs) {
+    if(lhs.tag != rhs.tag) {
+        return 0;
+    } else {
+        switch(lhs.tag) {
+        case TAG_INTEGER:
+            return lhs.as.integer == rhs.as.integer;
+        case TAG_NIL:
+            return 1;
+        case TAG_SYMBOL:
+            return lhs.as.symbol.lookup_index == rhs.as.symbol.lookup_index;
+        case TAG_PRIMITIVE:
+            return lhs.as.primitive == rhs.as.primitive;
+        case TAG_STRING:
+            return strcmp(lhs.as.string->items, rhs.as.string->items) == 0;
+        case TAG_LIST:
+            if(lhs.as.list->len != rhs.as.list->len) {
+                return 0;
+            } else {
+                int i = 0;
+                for(i = 0; i < lhs.as.list->len; ++i) {
+                    if(!eql(lhs.as.list->items[i], rhs.as.list->items[i])) {
+                        return 0;
+                    }
+                }
+                return 1;
+
+            }
+            
+        }
+    }
+    return 0;
+}
+
+Obj * plist_get(List * plist, Obj key) {
+    Obj * start = plist->items;
+    Obj * end = plist->items + plist->len;
+    for(;start != end; ++start) {
+        if(start->tag != TAG_LIST) {
+            write(stderr, *start);
+            fatal_error("Object is not an element of a plist");
+        } else {
+            Obj first = start->as.list->items[0];
+            if(first 
+        }
+
+    }
+}
+
+void plist_set(List * plist, Symbol key, Obj value) {
+    int i = 0;
+
+}
+
 void compile_sexpr(Obj src) {
     if(src.tag != TAG_LIST) {
         write(stderr, src);
