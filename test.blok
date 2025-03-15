@@ -3,9 +3,10 @@
 ]
 
 [defstruct settings
-    indentation
-    count
-    min
+    [@int indentation]
+    [@int count]
+    [@int min]
+    [@object extra]
 ]
 
 [defun main []

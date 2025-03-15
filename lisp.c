@@ -13,7 +13,23 @@ void fatal_error(const char * fmt, ...) {
     vfprintf(stderr, fmt, args);
     va_end(args);
     fprintf(stderr, "\n");
+    fflush(stderr);
     abort();
+}
+
+void * alloc(long bytes) {
+    int i = 0;
+    const int max_attempts = 10;
+    void * mem = malloc(bytes);
+    while(((long)mem & (~7)) != (long)mem) {
+        if(i > max_attempts) {
+            fatal_error("allocating aligned memory failed");
+        }
+        free(mem);
+        mem = malloc(bytes);
+        ++i;
+    }
+    return mem;
 }
 
 
@@ -56,7 +72,6 @@ typedef struct Obj {
         /*Table table;*/
     } as;
 } Obj; 
-
 
 
 /* Symbol handling */
@@ -403,6 +418,55 @@ void write(FILE * fp, Obj val) {
         break;
     }
 }
+
+Obj env_lookup(Obj * env, Symbol sym) {
+    int i = 0;
+    assert(env->tag == TAG_LIST);
+
+    fatal_error("todo: figure out how to store environment frames");
+    return make_nil();
+}
+
+Obj eval_expr(Obj * env, Obj expr) {
+    switch(expr.tag) {
+    case TAG_NIL: return make_nil();
+    case TAG_INTEGER: return make_integer(expr.as.integer);
+    case TAG_PRIMITIVE: fatal_error("TODO: figure out primitives");
+    case TAG_STRING: return make_string(expr.as.string->items);
+    case TAG_SYMBOL: return env_lookup(env, expr.as.symbol);
+    case TAG_LIST:  break;
+    }
+
+
+    return expr;
+}
+
+void compile_sexpr(Obj src) {
+    if(src.tag != TAG_LIST) {
+        write(stderr, src);
+        fatal_error("Expected top level expression to be a list");
+    } else {
+        List * list = src.as.list;
+        Obj * elems = list->items;
+        int count = list->len;
+        if(count == 0) {
+            write(stderr, src);
+            fatal_error("Empty top level expr");
+        }
+        if(elems[0].tag != TAG_SYMBOL) {
+            write(stderr, src);
+            fatal_error("Expected sexpr to start with a symbol");
+        }
+
+        
+    }
+    
+}
+
+void compile_toplevel(Obj src) {
+    assert(src.tag == TAG_LIST);
+}
+
 
 int main() {
     printf("sizeof Obj: %zu\n\n", sizeof(Obj));
