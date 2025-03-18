@@ -1,18 +1,23 @@
-[defun isspace [ch]
+[defun isspace:bool [ch:char]
     [return [or [== ch 10] [== ch 20] ] ]
 ]
 
 [defstruct settings
-    [@int indentation]
-    [@int count]
-    [@int min]
-    [@object extra]
+    indentation:int
+    count:int
+    min:int
+    extra:object
 ]
 
-[defun main []
-    [local settings [settings-table]]
-    [printf settings.indentation]
+[let string [array char]]
+
+[defun main:int [argc:int argv:[array string]]
+    [let count:int 10]
+    [for [variable i:int 1][< i count][incr! i]
+        [printf "%d\n" i]
+    ]
+
     [printf "Hello world\n"]
-    [printf "%d" [isspace ]]
+    [printf "%d" [isspace char.space]]
     [return 0]
 ]
