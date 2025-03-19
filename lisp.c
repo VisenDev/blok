@@ -17,6 +17,23 @@ void fatal_error(const char * fmt, ...) {
     abort();
 }
 
+void parse_error(FILE * fp, const char * fmt, ...) {
+    const long progress = ftell(fp);
+    long i = 0;
+    rewind(fp);
+    while(ftell(fp) < progress) {
+        fprintf(stderr, "%c", fgetc(fp));
+    }
+    fprintf(stderr, "\n\n");
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    abort();
+}
+
 void * alloc(long bytes) {
     int i = 0;
     const int max_attempts = 10;
@@ -33,12 +50,19 @@ void * alloc(long bytes) {
 }
 
 
-#define    TAG_NIL 0
-#define    TAG_INTEGER 1
-#define    TAG_STRING 2
-#define    TAG_SYMBOL 3
-#define    TAG_LIST 4
-#define    TAG_PRIMITIVE 5
+typedef enum {
+    TAG_NIL,
+    TAG_INTEGER,
+    TAG_STRING,
+    TAG_SYMBOL,
+    TAG_PRIMITIVE,
+    TAG_LIST,
+
+    /*other types of lists*/
+    TAG_PLIST,
+    TAG_NAMESPACED_SYMBOL,
+    TAG_TYPED_SYMBOL,
+} Tag;
 
 struct Obj;
 struct Env;
@@ -62,7 +86,7 @@ typedef struct {
 typedef struct Obj (*Primitive)(struct Obj * env, int argc, struct Obj * argv);
 
 typedef struct Obj {
-    char tag;
+    Tag tag;
     union {
         int integer;
         Symbol symbol;
@@ -240,6 +264,24 @@ Obj obj_dup_recursive(const Obj self) {
         return make_integer(self.as.integer);
     case TAG_LIST: 
         return list_duplicate(self.as.list);
+    case TAG_PLIST:
+    {
+        Obj result = list_duplicate(self.as.list);
+        result.tag = TAG_PLIST;
+        return result;
+    }
+    case TAG_NAMESPACED_SYMBOL:
+    {
+        Obj result = list_duplicate(self.as.list);
+        result.tag = TAG_NAMESPACED_SYMBOL;
+        return result;
+    }
+    case TAG_TYPED_SYMBOL:
+    {
+        Obj result = list_duplicate(self.as.list);
+        result.tag = TAG_TYPED_SYMBOL;
+        return result;
+    }
     case TAG_PRIMITIVE:
         return make_primitive(self.as.primitive);
     case TAG_SYMBOL:
@@ -294,11 +336,16 @@ void skip_whitespace(FILE * fp) {
     }
 }
 
+int keep_parsing_symbol(FILE * fp) {
+    return (!is_special_character(peek(fp)) && !isspace(peek(fp)) && !feof(fp));
+}
+
+/*
 Obj parse_symbol(FILE * fp) {
     char buf [1024] = {0};
     int i = 0;
     skip_whitespace(fp);
-    while(!is_special_character(peek(fp)) && !isspace(peek(fp)) && !feof(fp)) {
+    while(keep_parsing_symbol(fp)) {
         buf[i] = fgetc(fp);
         ++i;
     }
@@ -306,6 +353,59 @@ Obj parse_symbol(FILE * fp) {
         fatal_error("Parsing symbol failed on parsing char: %d", peek(fp));
     }
     return make_symbol(buf);
+}
+*/
+
+Obj parse_expr(FILE * fp);
+
+Obj parse_any_symbol(FILE * fp) {
+    char buf [1024] = {0};
+    int i = 0;
+    skip_whitespace(fp);
+    while(keep_parsing_symbol(fp)) {
+        buf[i] = fgetc(fp);
+        buf[i + 1] = 0;
+        ++i;
+    }
+    if(i == 0) {
+        parse_error(fp, "Parsing symbol failed on parsing char: %d", peek(fp));
+    }
+    skip_whitespace(fp);
+
+    /*typed symbol*/
+    if(peek(fp) == ':') {
+        Obj result = make_list(2);
+        result.tag = TAG_TYPED_SYMBOL;
+        list_push(result.as.list, make_symbol(buf));
+        fgetc(fp);
+        list_push(result.as.list, parse_expr(fp));
+        skip_whitespace(fp);
+        return result;
+        
+    /*namespaced symbol*/
+    } else if(peek(fp) == '.' ) {
+        Obj result = make_list(2);
+        result.tag = TAG_NAMESPACED_SYMBOL;
+        list_push(result.as.list, make_symbol(buf));
+        fgetc(fp);
+        skip_whitespace(fp);
+        while(peek(fp) == '.') {
+            i = 0;
+            while(keep_parsing_symbol(fp)) {
+                buf[i] = fgetc(fp);
+                buf[i + 1] = 0;
+                ++i;
+            }
+            skip_whitespace(fp);
+            list_push(result.as.list, make_symbol(buf));
+        }
+        return result;
+
+    /*normal symbol*/
+    } else {
+        return make_symbol(buf);
+    }
+
 }
 
 Obj parse_string(FILE * fp) {
@@ -315,7 +415,7 @@ Obj parse_string(FILE * fp) {
     assert(fgetc(fp) == '"');
     while(peek(fp) != '"') {
         if(feof(fp)) {
-            fatal_error("unexpected end of input when parsing string");
+            parse_error(fp, "unexpected end of input when parsing string");
         }
         buf[i] = fgetc(fp);
         ++i;
@@ -334,30 +434,21 @@ Obj parse_expr(FILE * fp) {
     if(peek(fp) == '"') {
         return parse_string(fp);
     } else if(peek(fp) == '\'') {
-        /* TODO quote reader macro*/
-        fatal_error("quote not implemented yet");
-    } else if(peek(fp) == '.') {
-        /* TODO period reader macro*/
+        Obj result = make_list(2);
         fgetc(fp);
-        return make_nil();
-        fatal_error("quote not implemented yet");
+        list_push(result.as.list, make_symbol("quote"));
+        list_push(result.as.list, parse_expr(fp));
+        return result;
     } else if(isdigit(peek(fp))) {
         return parse_integer(fp); 
     } else if (peek(fp) == '[') {
         return parse_list(fp);
     } else if (peek(fp) == ']') {
-        const long progress = ftell(fp);
-        long i = 0;
-        rewind(fp);
-        while(ftell(fp) < progress) {
-            fprintf(stderr, "%c", fgetc(fp));
-        }
-        fflush(stderr);
-        fatal_error("Unexpected end of input");
+        parse_error(fp, "Unexpected end of input");
     } else if (!is_special_character(peek(fp))) {
-        return parse_symbol(fp);
+        return parse_any_symbol(fp);
     } else {
-        fatal_error("Parsing failure");
+        parse_error(fp, "Parsing failure, expected expression");
     }
     return make_nil();
 }
@@ -399,14 +490,6 @@ void write(FILE * fp, Obj val) {
     case TAG_INTEGER:
         fprintf(fp, "%d", val.as.integer);
         break;
-    case TAG_LIST:
-        fprintf(fp, "[");
-        for(i = 0; i < val.as.list->len; ++i) {
-            if(i != 0) fprintf(fp, " ");
-            write(fp, val.as.list->items[i]);
-        }
-        fprintf(fp, "]");
-        break;
     case TAG_PRIMITIVE:
         fprintf(fp, "<Primitive %p>", val.as.primitive);
         break;
@@ -416,6 +499,36 @@ void write(FILE * fp, Obj val) {
     case TAG_SYMBOL:
         fprintf(fp, "%s", symbols[val.as.symbol.lookup_index]);
         break;
+    case TAG_LIST:
+        fprintf(fp, "[");
+        for(i = 0; i < val.as.list->len; ++i) {
+            if(i != 0) fprintf(fp, " ");
+            write(fp, val.as.list->items[i]);
+        }
+        fprintf(fp, "]");
+        break;
+    case TAG_PLIST:
+        fprintf(fp, "`[");
+        for(i = 0; i < val.as.list->len; ++i) {
+            if(i != 0) fprintf(fp, " ");
+            write(fp, val.as.list->items[i]);
+        }
+        fprintf(fp, "]");
+        break;
+    case TAG_TYPED_SYMBOL:
+        assert(val.as.list->len == 2);
+        write(fp, val.as.list->items[0]);
+        fprintf(fp, ":");
+        write(fp, val.as.list->items[1]);
+        break;
+    case TAG_NAMESPACED_SYMBOL:
+        for(i = 0; i < val.as.list->len; ++i) {
+            if(i != 0) fprintf(fp, ".");
+            write(fp, val.as.list->items[i]);
+        }
+        break;
+    default:
+        fatal_error("Invalid object tag: %d", val.tag);
     }
 }
 
@@ -469,7 +582,8 @@ int eql(const Obj lhs, const Obj rhs) {
                 return 1;
 
             }
-            
+        default:
+            fatal_error("Tag %d not supported yet\n");
         }
     }
     return 0;
@@ -484,7 +598,6 @@ Obj * plist_get(List * plist, Obj key) {
             fatal_error("Object is not an element of a plist");
         } else {
             Obj first = start->as.list->items[0];
-            if(first 
         }
 
     }
