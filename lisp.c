@@ -51,21 +51,42 @@ void * alloc(long bytes) {
 
 
 typedef enum {
+
+    /* basic types */
     TAG_NIL,
     TAG_INTEGER,
     TAG_STRING,
     TAG_SYMBOL,
-    TAG_PRIMITIVE,
-    TAG_LIST,
-
-    /*other types of lists*/
-    TAG_PLIST,
-    TAG_NAMESPACED_SYMBOL,
     TAG_TYPED_SYMBOL,
+    TAG_ERROR,
+
+    /* various primitives */
+    TAG_PRIMITIVE_1,
+    TAG_PRIMITIVE_2,
+    TAG_PRIMITIVE_3,
+    TAG_PRIMITIVE_4,
+    TAG_PRIMITIVE_5,
+
+    /*various types stored in lists*/
+    TAG_LIST, /*basic list*/
+    TAG_PLIST, /*property (association) list*/
+    TAG_NAMESPACED_SYMBOL, /*list containing only symbols*/
 } Tag;
+
 
 struct Obj;
 struct Env;
+
+typedef struct {
+    struct Obj * symbol;
+    struct Obj * type;
+} TypedSymbol;
+
+typedef struct {
+    int line;
+    const char * file;
+    struct Obj * data;
+} Error;
 
 typedef struct {
     struct Obj * items;
@@ -83,17 +104,31 @@ typedef struct {
     int lookup_index;
 } Symbol;
 
-typedef struct Obj (*Primitive)(struct Obj * env, int argc, struct Obj * argv);
+typedef struct Obj * (*Primitive1)(List * env_plist, struct Obj *);
+typedef struct Obj * (*Primitive2)(List * env_plist, struct Obj *, struct Obj *);
+typedef struct Obj * (*Primitive3)(List * env_plist, struct Obj *, struct Obj *, struct Obj *);
+typedef struct Obj * (*Primitive4)(List * env_plist, struct Obj *, struct Obj *, struct Obj *, struct Obj *);
+typedef struct Obj * (*Primitive5)(List * env_plist, struct Obj *, struct Obj *, struct Obj *, struct Obj *, struct Obj *);
+
 
 typedef struct Obj {
     Tag tag;
     union {
         int integer;
         Symbol symbol;
-        Primitive primitive;
+	TypedSymbol * typed_symbol;
         String * string;
+        Error * error;
+
+	/*various primitives*/
+        Primitive1 primitive1;
+        Primitive2 primitive2;
+        Primitive3 primitive3;
+	Primitive4 primitive4;
+	Primitive5 primitive5;
+
+	/*stores: list, plist, namespaced symbol*/
         List * list;
-        /*Table table;*/
     } as;
 } Obj; 
 
@@ -589,7 +624,7 @@ int eql(const Obj lhs, const Obj rhs) {
     return 0;
 }
 
-Obj * plist_get(List * plist, Obj key) {
+struct Obj * plist_get(struct Obj * env, int argc, struct Obj * argv){
     Obj * start = plist->items;
     Obj * end = plist->items + plist->len;
     for(;start != end; ++start) {
