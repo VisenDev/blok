@@ -299,12 +299,6 @@ Obj obj_dup_recursive(const Obj self) {
         return make_integer(self.as.integer);
     case TAG_LIST: 
         return list_duplicate(self.as.list);
-    case TAG_PLIST:
-    {
-        Obj result = list_duplicate(self.as.list);
-        result.tag = TAG_PLIST;
-        return result;
-    }
     case TAG_NAMESPACED_SYMBOL:
     {
         Obj result = list_duplicate(self.as.list);
@@ -542,14 +536,6 @@ void write(FILE * fp, Obj val) {
         }
         fprintf(fp, "]");
         break;
-    case TAG_PLIST:
-        fprintf(fp, "`[");
-        for(i = 0; i < val.as.list->len; ++i) {
-            if(i != 0) fprintf(fp, " ");
-            write(fp, val.as.list->items[i]);
-        }
-        fprintf(fp, "]");
-        break;
     case TAG_TYPED_SYMBOL:
         assert(val.as.list->len == 2);
         write(fp, val.as.list->items[0]);
@@ -567,28 +553,6 @@ void write(FILE * fp, Obj val) {
     }
 }
 
-Obj env_lookup(Obj * env, Symbol sym) {
-    int i = 0;
-    assert(env->tag == TAG_LIST);
-
-    fatal_error("todo: figure out how to store environment frames");
-    return make_nil();
-}
-
-Obj eval_expr(Obj * env, Obj expr) {
-    switch(expr.tag) {
-    case TAG_NIL: return make_nil();
-    case TAG_INTEGER: return make_integer(expr.as.integer);
-    case TAG_PRIMITIVE: fatal_error("TODO: figure out primitives");
-    case TAG_STRING: return make_string(expr.as.string->items);
-    case TAG_SYMBOL: return env_lookup(env, expr.as.symbol);
-    case TAG_LIST:  break;
-    }
-
-
-    return expr;
-}
-
 int eql(const Obj lhs, const Obj rhs) {
     if(lhs.tag != rhs.tag) {
         return 0;
@@ -604,6 +568,8 @@ int eql(const Obj lhs, const Obj rhs) {
             return lhs.as.primitive == rhs.as.primitive;
         case TAG_STRING:
             return strcmp(lhs.as.string->items, rhs.as.string->items) == 0;
+        case TAG_NAMESPACED_SYMBOL:
+        case TAG_TYPED_SYMBOL:
         case TAG_LIST:
             if(lhs.as.list->len != rhs.as.list->len) {
                 return 0;
@@ -624,24 +590,91 @@ int eql(const Obj lhs, const Obj rhs) {
     return 0;
 }
 
+
 struct Obj * plist_get(struct Obj * env, int argc, struct Obj * argv){
     Obj * start = plist->items;
     Obj * end = plist->items + plist->len;
     for(;start != end; ++start) {
-        if(start->tag != TAG_LIST) {
+        if(start->tag == TAG_LIST && start->as.list->len >= 2) {
+            Obj first = start->as.list->items[0];
+            if(eql(first, key)) {
+                return &start->as.list->items[1];
+            }
+        } else {
             write(stderr, *start);
             fatal_error("Object is not an element of a plist");
-        } else {
-            Obj first = start->as.list->items[0];
         }
+    }
+    return NULL;
+}
 
+void plist_set(List * plist, Obj key, Obj value) {
+    Obj * found = plist_get(plist, key);
+    if(found == NULL) {
+        Obj new_list = make_list(2);
+        list_push(new_list.as.list, key);
+        list_push(new_list.as.list, value);
+        list_push(plist, new_list);
+    } else {
+        obj_free_recursive(found);
+        *found = obj_dup_recursive(value);
     }
 }
 
-void plist_set(List * plist, Symbol key, Obj value) {
-    int i = 0;
+/* INTERPRETER AND COMPILER */
 
+/* A scope consists of a property list mapping symbols to values */
+/* A scope may contain nested scopes, whose values can be accessed used namespaced symbols */
+/* Env is a stack of property lists representing the currently available lexical scope*/
+Obj * env_get(List* env, Obj sym) {
+    if(sym.tag == TAG_SYMBOL) {
+        Obj * start = env->items;
+        Obj * end = env->items + env->len;
+        for(;start < end; ++start) {
+            assert(start->tag == TAG_LIST);
+            {
+            Obj * found = plist_get(start->as.list, sym);
+            if(found != NULL) {
+                return found;
+            }
+            }
+        }
+    } else if(sym.tag == TAG_NAMESPACED_SYMBOL) {
+        Obj first = sym.as.list->items[0];
+        if(first.tag != TAG_SYMBOL) {
+            write(stderr, sym);
+            fatal_error("Invalid namespaced symbol");
+        }
+        /*TODO finish this function, lookup the namespace pointed to by first, then lookup second in that namespace*/
+    } else {
+        write(stderr, sym);
+        fatal_error("Invalid symbol type");
+    }
+
+    fatal_error("todo: figure out how to store environment frames");
+    return make_nil();
 }
+
+void env_set(List * env, Symbol sym, Obj value);
+
+void env_enter_scope(List * env);
+void env_exit_scope(List * env);
+
+
+Obj eval_expr(List * env, Obj expr) {
+    switch(expr.tag) {
+    case TAG_NIL: return make_nil();
+    case TAG_INTEGER: return make_integer(expr.as.integer);
+    case TAG_PRIMITIVE: fatal_error("TODO: figure out primitives");
+    case TAG_STRING: return make_string(expr.as.string->items);
+    case TAG_SYMBOL: return env_lookup(env, expr.as.symbol);
+    case TAG_LIST:  break;
+    }
+
+
+    return expr;
+}
+
 
 void compile_sexpr(Obj src) {
     if(src.tag != TAG_LIST) {
