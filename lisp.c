@@ -22,7 +22,7 @@ void parse_error(FILE * fp, const char * fmt, ...) {
     long i = 0;
     rewind(fp);
     while(ftell(fp) < progress) {
-        fprintf(stderr, "%c", fgetc(fp));
+	fprintf(stderr, "%c", fgetc(fp));
     }
     fprintf(stderr, "\n\n");
     va_list args;
@@ -39,96 +39,63 @@ void * alloc(long bytes) {
     const int max_attempts = 10;
     void * mem = malloc(bytes);
     while(((long)mem & (~7)) != (long)mem) {
-        if(i > max_attempts) {
-            fatal_error("allocating aligned memory failed");
-        }
-        free(mem);
-        mem = malloc(bytes);
-        ++i;
+	if(i > max_attempts) {
+	    fatal_error("allocating aligned memory failed");
+	}
+	free(mem);
+	mem = malloc(bytes);
+	++i;
     }
     return mem;
 }
 
-
 typedef enum {
 
-    /* basic types */
+    /* flag types */
     TAG_NIL,
+    TAG_TRUE,
+    TAG_FALSE,
+
+    /* basic types */    
     TAG_INTEGER,
-    TAG_STRING,
+    TAG_FLOATING,
     TAG_SYMBOL,
-    TAG_TYPED_SYMBOL,
-    TAG_ERROR,
+    TAG_PRIMITIVE,
 
-    /* various primitives */
-    TAG_PRIMITIVE_1,
-    TAG_PRIMITIVE_2,
-    TAG_PRIMITIVE_3,
-    TAG_PRIMITIVE_4,
-    TAG_PRIMITIVE_5,
-
-    /*various types stored in lists*/
+    /* types stored in lists (dynamic allocation) */
     TAG_LIST, /*basic list*/
+    TAG_STRING, /*list containing chars instead of Objects*/
     TAG_PLIST, /*property (association) list*/
+    TAG_ERROR, /*property list containing special fields like line, file, and message*/
     TAG_NAMESPACED_SYMBOL, /*list containing only symbols*/
+    TAG_TYPED_SYMBOL, /*property list containing type and name*/
 } Tag;
 
 
 struct Obj;
-struct Env;
+typedef struct Obj Obj;
 
 typedef struct {
-    struct Obj * symbol;
-    struct Obj * type;
-} TypedSymbol;
-
-typedef struct {
-    int line;
-    const char * file;
-    struct Obj * data;
-} Error;
-
-typedef struct {
-    struct Obj * items;
+    void * items;
     int len;
     int cap;
 } List;
 
 typedef struct {
-    char * items;
-    int len;
-    int cap;
-} String;
-
-typedef struct {
     int lookup_index;
 } Symbol;
 
-typedef struct Obj * (*Primitive1)(List * env_plist, struct Obj *);
-typedef struct Obj * (*Primitive2)(List * env_plist, struct Obj *, struct Obj *);
-typedef struct Obj * (*Primitive3)(List * env_plist, struct Obj *, struct Obj *, struct Obj *);
-typedef struct Obj * (*Primitive4)(List * env_plist, struct Obj *, struct Obj *, struct Obj *, struct Obj *);
-typedef struct Obj * (*Primitive5)(List * env_plist, struct Obj *, struct Obj *, struct Obj *, struct Obj *, struct Obj *);
-
+typedef Obj (*Primitive) (Obj * env, int argc, Obj * argv);
 
 typedef struct Obj {
     Tag tag;
     union {
-        int integer;
-        Symbol symbol;
-	TypedSymbol * typed_symbol;
-        String * string;
-        Error * error;
+	int integer;
+	float floating;
+	Symbol symbol;
+	Primitive primitive;
 
-	/*various primitives*/
-        Primitive1 primitive1;
-        Primitive2 primitive2;
-        Primitive3 primitive3;
-	Primitive4 primitive4;
-	Primitive5 primitive5;
-
-	/*stores: list, plist, namespaced symbol*/
-        List * list;
+	List * list;
     } as;
 } Obj; 
 
@@ -144,19 +111,62 @@ int streql(const char * a, const char * b) {
     return strncmp(a, b, max_symbol_len) == 0;
 }
 
-/* Constructors*/
+/* ==== PRIMITIVE CONSTRUCTORS ==== */
+Obj make_nil(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_NIL;
+    return result;
+}
+Obj make_true(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_TRUE;
+    return result;
+}
+Obj make_false(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_FALSE;
+    return result;
+}
+Obj make_integer(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_INTEGER;
+    return result;
+}
+Obj make_floating(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_FLOATING;
+    return result;
+}
+Obj make_symbol(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_SYMBOL;
+    return result;
+}
+Obj make_primitive(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_PRIMITIVE;
+    return result;
+}
+Obj make_list(Obj * env, int argc, Obj * argv) {
+    Obj result = {0};
+    result.tag = TAG_LIST;
+    return result;
+}
+
+
+
 Obj make_symbol(const char * name) {
     Obj result = {0}; 
     result.tag = TAG_SYMBOL;
     int i = 0;
     for(i = 0; i < symbols_len; ++i) {
-        if(streql(name, symbols[i])) {
-            result.as.symbol.lookup_index = i;
-            return result;
-        }
+	if(streql(name, symbols[i])) {
+	    result.as.symbol.lookup_index = i;
+	    return result;
+	}
     }
     if(symbols_len >= max_symbol_len) {
-        fatal_error("Symbol storage array overflow");
+	fatal_error("Symbol storage array overflow");
     } 
     memmove(symbols[symbols_len], name, strlen(name));
     ++symbols_len;
@@ -208,45 +218,52 @@ Obj make_nil(void) {
     return result;
 }
 
-void obj_free_recursive(Obj * self) { 
+Obj make_error(int line, const char * file, const char * message)
+
+
+/* ==== IMPLEMENTATION FUNCTIONS ==== */
+Obj obj_free_recursive(Obj env, int argc, Obj * argv) {
     int i = 0;
-    switch(self->tag) {
-    case TAG_STRING:
-        free(self->as.string->items);
-        break;
+    (void)env;
+    return 
+        
+    switch(argv[0].tag) {
     case TAG_LIST:
-        for(int i = 0; i < self->as.list->len; ++i) {
-            obj_free_recursive(&self->as.list->items[i]);
-        }
-        free(self->as.list->items);
-        free(self->as.list);
-        break;
+	for(int i = 0; i < argv[0].as.list->len; ++i) {
+	    obj_free_recursive(&argv[0].as.list->items[i]);
+	}
+	free(argv[0].as.list->items);
+	free(argv[0].as.list);
+	break;
     default:
-        break;
+	break;
     }
-    self->tag = TAG_NIL;
+    argv[0].tag = TAG_NIL;
+
+    return make_nil();
 }
 
 
 /*prototype for duplication*/
-Obj obj_dup_recursive(const Obj self);
+Obj obj_dup_recursive(Obj env, int argc, Obj * argv);
+
 
 /* Utility functions */
 void list_ensure_capacity(List * self, int new_cap) {
     if(self->cap == 0) {
-        self->cap = new_cap;
-        self->len= 0;
-        self->items = malloc(sizeof(Obj) * self->cap);
+	self->cap = new_cap;
+	self->len= 0;
+	self->items = malloc(sizeof(Obj) * self->cap);
     } else if(self->cap < new_cap) {
-        self->cap = new_cap;
-        self->items = realloc(self->items, self->cap * sizeof(Obj));
+	self->cap = new_cap;
+	self->items = realloc(self->items, self->cap * sizeof(Obj));
     }
 }
 
 /* item is copied not referenced */
 void list_push(List * self, Obj item) {
     if(self->len >= self->cap) {
-        list_ensure_capacity(self, self->cap * 2 + 1);
+	list_ensure_capacity(self, self->cap * 2 + 1);
     }
     self->items[self->len] = obj_dup_recursive(item);
     ++self->len;
@@ -259,20 +276,20 @@ Obj list_pop(List * self) {
 
 Obj list_get(const List * self, int i) {
     if(i <= 0 || i > self->len) {
-        return make_nil();
+	return make_nil();
     } else {
-        return obj_dup_recursive(self->items[i]);
+	return obj_dup_recursive(self->items[i]);
     }
 }
 
 void list_set(List * self, int i, Obj value) {
     assert(i >= 0);
     if(i >= self->len) {
-        int j = 0;
-        list_ensure_capacity(self, i + 1);
-        for(j = 0; j < i + 1; ++j) {
-            list_push(self, make_nil());
-        }
+	int j = 0;
+	list_ensure_capacity(self, i + 1);
+	for(j = 0; j < i + 1; ++j) {
+	    list_push(self, make_nil());
+	}
     }
     obj_free_recursive(&self->items[i]);
     self->items[i] = obj_dup_recursive(value);
@@ -283,7 +300,7 @@ Obj list_duplicate(const List * self) {
     int i = 0;
     Obj result = make_list(self->len);
     for(i = 0; i < self->len; ++i) {
-        list_push(result.as.list, obj_dup_recursive(self->items[i]));
+	list_push(result.as.list, obj_dup_recursive(self->items[i]));
     }
     return result;
 }
@@ -292,32 +309,32 @@ Obj list_duplicate(const List * self) {
 Obj obj_dup_recursive(const Obj self) {
     switch(self.tag) {
     case TAG_STRING:
-        return make_string(self.as.string->items);
+	return make_string(self.as.string->items);
     case TAG_NIL:
-        return make_nil();
+	return make_nil();
     case TAG_INTEGER:
-        return make_integer(self.as.integer);
+	return make_integer(self.as.integer);
     case TAG_LIST: 
-        return list_duplicate(self.as.list);
+	return list_duplicate(self.as.list);
     case TAG_NAMESPACED_SYMBOL:
     {
-        Obj result = list_duplicate(self.as.list);
-        result.tag = TAG_NAMESPACED_SYMBOL;
-        return result;
+	Obj result = list_duplicate(self.as.list);
+	result.tag = TAG_NAMESPACED_SYMBOL;
+	return result;
     }
     case TAG_TYPED_SYMBOL:
     {
-        Obj result = list_duplicate(self.as.list);
-        result.tag = TAG_TYPED_SYMBOL;
-        return result;
+	Obj result = list_duplicate(self.as.list);
+	result.tag = TAG_TYPED_SYMBOL;
+	return result;
     }
     case TAG_PRIMITIVE:
-        return make_primitive(self.as.primitive);
+	return make_primitive(self.as.primitive);
     case TAG_SYMBOL:
-        return self;
+	return self;
     default:
-        fatal_error("invalid tag: %d", self.tag);
-        return make_nil();
+	fatal_error("invalid tag: %d", self.tag);
+	return make_nil();
     }
 }
 
@@ -325,9 +342,9 @@ Obj obj_dup_recursive(const Obj self) {
 int is_number(const char * str) {
     int i = 0;
     for(i = 0; str[i] != 0; ++i) {
-        if(!isdigit(str[i])) {
-            return 0;
-        }
+	if(!isdigit(str[i])) {
+	    return 0;
+	}
     }
     return 1;
 }
@@ -340,12 +357,12 @@ char peek(FILE * fp) {
 
 int is_special_character(char ch) {
     return ch == '['
-        || ch == ']'
-        || ch == '.'
-        || ch == ':'
-        || ch == '\''
-        || ch == '"'
-        || ch == '`';
+	|| ch == ']'
+	|| ch == '.'
+	|| ch == ':'
+	|| ch == '\''
+	|| ch == '"'
+	|| ch == '`';
 }
 
 Obj parse_integer(FILE * fp) {
@@ -353,15 +370,15 @@ Obj parse_integer(FILE * fp) {
     int i = 0;
     /*printf("parsing integer");*/
     while(isdigit(peek(fp))) {
-        buf[i] = fgetc(fp);
-        ++i;
+	buf[i] = fgetc(fp);
+	++i;
     }
     return make_integer(atoi(buf));
 }
 
 void skip_whitespace(FILE * fp) {
     while(isspace(peek(fp)) || peek(fp) == '\n') {
-        fgetc(fp);
+	fgetc(fp);
     }
 }
 
@@ -370,19 +387,19 @@ int keep_parsing_symbol(FILE * fp) {
 }
 
 /*
-Obj parse_symbol(FILE * fp) {
-    char buf [1024] = {0};
-    int i = 0;
-    skip_whitespace(fp);
-    while(keep_parsing_symbol(fp)) {
-        buf[i] = fgetc(fp);
-        ++i;
-    }
-    if(i == 0) {
-        fatal_error("Parsing symbol failed on parsing char: %d", peek(fp));
-    }
-    return make_symbol(buf);
-}
+  Obj parse_symbol(FILE * fp) {
+  char buf [1024] = {0};
+  int i = 0;
+  skip_whitespace(fp);
+  while(keep_parsing_symbol(fp)) {
+  buf[i] = fgetc(fp);
+  ++i;
+  }
+  if(i == 0) {
+  fatal_error("Parsing symbol failed on parsing char: %d", peek(fp));
+  }
+  return make_symbol(buf);
+  }
 */
 
 Obj parse_expr(FILE * fp);
@@ -392,47 +409,47 @@ Obj parse_any_symbol(FILE * fp) {
     int i = 0;
     skip_whitespace(fp);
     while(keep_parsing_symbol(fp)) {
-        buf[i] = fgetc(fp);
-        buf[i + 1] = 0;
-        ++i;
+	buf[i] = fgetc(fp);
+	buf[i + 1] = 0;
+	++i;
     }
     if(i == 0) {
-        parse_error(fp, "Parsing symbol failed on parsing char: %d", peek(fp));
+	parse_error(fp, "Parsing symbol failed on parsing char: %d", peek(fp));
     }
     skip_whitespace(fp);
 
     /*typed symbol*/
     if(peek(fp) == ':') {
-        Obj result = make_list(2);
-        result.tag = TAG_TYPED_SYMBOL;
-        list_push(result.as.list, make_symbol(buf));
-        fgetc(fp);
-        list_push(result.as.list, parse_expr(fp));
-        skip_whitespace(fp);
-        return result;
+	Obj result = make_list(2);
+	result.tag = TAG_TYPED_SYMBOL;
+	list_push(result.as.list, make_symbol(buf));
+	fgetc(fp);
+	list_push(result.as.list, parse_expr(fp));
+	skip_whitespace(fp);
+	return result;
         
-    /*namespaced symbol*/
+	/*namespaced symbol*/
     } else if(peek(fp) == '.' ) {
-        Obj result = make_list(2);
-        result.tag = TAG_NAMESPACED_SYMBOL;
-        list_push(result.as.list, make_symbol(buf));
-        fgetc(fp);
-        skip_whitespace(fp);
-        while(peek(fp) == '.') {
-            i = 0;
-            while(keep_parsing_symbol(fp)) {
-                buf[i] = fgetc(fp);
-                buf[i + 1] = 0;
-                ++i;
-            }
-            skip_whitespace(fp);
-            list_push(result.as.list, make_symbol(buf));
-        }
-        return result;
+	Obj result = make_list(2);
+	result.tag = TAG_NAMESPACED_SYMBOL;
+	list_push(result.as.list, make_symbol(buf));
+	fgetc(fp);
+	skip_whitespace(fp);
+	while(peek(fp) == '.') {
+	    i = 0;
+	    while(keep_parsing_symbol(fp)) {
+		buf[i] = fgetc(fp);
+		buf[i + 1] = 0;
+		++i;
+	    }
+	    skip_whitespace(fp);
+	    list_push(result.as.list, make_symbol(buf));
+	}
+	return result;
 
-    /*normal symbol*/
+	/*normal symbol*/
     } else {
-        return make_symbol(buf);
+	return make_symbol(buf);
     }
 
 }
@@ -443,11 +460,11 @@ Obj parse_string(FILE * fp) {
     /*printf("parsing string");*/
     assert(fgetc(fp) == '"');
     while(peek(fp) != '"') {
-        if(feof(fp)) {
-            parse_error(fp, "unexpected end of input when parsing string");
-        }
-        buf[i] = fgetc(fp);
-        ++i;
+	if(feof(fp)) {
+	    parse_error(fp, "unexpected end of input when parsing string");
+	}
+	buf[i] = fgetc(fp);
+	++i;
     }
     assert(fgetc(fp) == '"');
     return make_string(buf);
@@ -458,26 +475,26 @@ Obj parse_list(FILE * fp);
 Obj parse_expr(FILE * fp) {
     skip_whitespace(fp);
     if(feof(fp)) {
-        return make_nil();
+	return make_nil();
     }
     if(peek(fp) == '"') {
-        return parse_string(fp);
+	return parse_string(fp);
     } else if(peek(fp) == '\'') {
-        Obj result = make_list(2);
-        fgetc(fp);
-        list_push(result.as.list, make_symbol("quote"));
-        list_push(result.as.list, parse_expr(fp));
-        return result;
+	Obj result = make_list(2);
+	fgetc(fp);
+	list_push(result.as.list, make_symbol("quote"));
+	list_push(result.as.list, parse_expr(fp));
+	return result;
     } else if(isdigit(peek(fp))) {
-        return parse_integer(fp); 
+	return parse_integer(fp); 
     } else if (peek(fp) == '[') {
-        return parse_list(fp);
+	return parse_list(fp);
     } else if (peek(fp) == ']') {
-        parse_error(fp, "Unexpected end of input");
+	parse_error(fp, "Unexpected end of input");
     } else if (!is_special_character(peek(fp))) {
-        return parse_any_symbol(fp);
+	return parse_any_symbol(fp);
     } else {
-        parse_error(fp, "Parsing failure, expected expression");
+	parse_error(fp, "Parsing failure, expected expression");
     }
     return make_nil();
 }
@@ -488,13 +505,13 @@ Obj parse_list(FILE * fp) {
     assert(fgetc(fp) == '[');
     skip_whitespace(fp);
     if(peek(fp) == ']') {
-        fgetc(fp);
-        return result;
+	fgetc(fp);
+	return result;
     }
     while(peek(fp) != ']') {
-        skip_whitespace(fp);
-        list_push(result.as.list, parse_expr(fp));
-        skip_whitespace(fp);
+	skip_whitespace(fp);
+	list_push(result.as.list, parse_expr(fp));
+	skip_whitespace(fp);
     }
     assert(fgetc(fp) == ']');
     return result;
@@ -504,7 +521,7 @@ Obj read(FILE * fp) {
     Obj root = make_list(8);
 
     while(!feof(fp)) {
-        list_push(root.as.list, parse_expr(fp));
+	list_push(root.as.list, parse_expr(fp));
     }
 
     return root;
@@ -514,78 +531,78 @@ void write(FILE * fp, Obj val) {
     int i = 0;
     switch(val.tag) {
     case TAG_NIL:
-        fprintf(fp, "nil");
-        break;
+	fprintf(fp, "nil");
+	break;
     case TAG_INTEGER:
-        fprintf(fp, "%d", val.as.integer);
-        break;
+	fprintf(fp, "%d", val.as.integer);
+	break;
     case TAG_PRIMITIVE:
-        fprintf(fp, "<Primitive %p>", val.as.primitive);
-        break;
+	fprintf(fp, "<Primitive %p>", val.as.primitive);
+	break;
     case TAG_STRING:
-        fprintf(fp, "\"%s\"", val.as.string->items);
-        break;
+	fprintf(fp, "\"%s\"", val.as.string->items);
+	break;
     case TAG_SYMBOL:
-        fprintf(fp, "%s", symbols[val.as.symbol.lookup_index]);
-        break;
+	fprintf(fp, "%s", symbols[val.as.symbol.lookup_index]);
+	break;
     case TAG_LIST:
-        fprintf(fp, "[");
-        for(i = 0; i < val.as.list->len; ++i) {
-            if(i != 0) fprintf(fp, " ");
-            write(fp, val.as.list->items[i]);
-        }
-        fprintf(fp, "]");
-        break;
+	fprintf(fp, "[");
+	for(i = 0; i < val.as.list->len; ++i) {
+	    if(i != 0) fprintf(fp, " ");
+	    write(fp, val.as.list->items[i]);
+	}
+	fprintf(fp, "]");
+	break;
     case TAG_TYPED_SYMBOL:
-        assert(val.as.list->len == 2);
-        write(fp, val.as.list->items[0]);
-        fprintf(fp, ":");
-        write(fp, val.as.list->items[1]);
-        break;
+	assert(val.as.list->len == 2);
+	write(fp, val.as.list->items[0]);
+	fprintf(fp, ":");
+	write(fp, val.as.list->items[1]);
+	break;
     case TAG_NAMESPACED_SYMBOL:
-        for(i = 0; i < val.as.list->len; ++i) {
-            if(i != 0) fprintf(fp, ".");
-            write(fp, val.as.list->items[i]);
-        }
-        break;
+	for(i = 0; i < val.as.list->len; ++i) {
+	    if(i != 0) fprintf(fp, ".");
+	    write(fp, val.as.list->items[i]);
+	}
+	break;
     default:
-        fatal_error("Invalid object tag: %d", val.tag);
+	fatal_error("Invalid object tag: %d", val.tag);
     }
 }
 
 int eql(const Obj lhs, const Obj rhs) {
     if(lhs.tag != rhs.tag) {
-        return 0;
+	return 0;
     } else {
-        switch(lhs.tag) {
-        case TAG_INTEGER:
-            return lhs.as.integer == rhs.as.integer;
-        case TAG_NIL:
-            return 1;
-        case TAG_SYMBOL:
-            return lhs.as.symbol.lookup_index == rhs.as.symbol.lookup_index;
-        case TAG_PRIMITIVE:
-            return lhs.as.primitive == rhs.as.primitive;
-        case TAG_STRING:
-            return strcmp(lhs.as.string->items, rhs.as.string->items) == 0;
-        case TAG_NAMESPACED_SYMBOL:
-        case TAG_TYPED_SYMBOL:
-        case TAG_LIST:
-            if(lhs.as.list->len != rhs.as.list->len) {
-                return 0;
-            } else {
-                int i = 0;
-                for(i = 0; i < lhs.as.list->len; ++i) {
-                    if(!eql(lhs.as.list->items[i], rhs.as.list->items[i])) {
-                        return 0;
-                    }
-                }
-                return 1;
+	switch(lhs.tag) {
+	case TAG_INTEGER:
+	    return lhs.as.integer == rhs.as.integer;
+	case TAG_NIL:
+	    return 1;
+	case TAG_SYMBOL:
+	    return lhs.as.symbol.lookup_index == rhs.as.symbol.lookup_index;
+	case TAG_PRIMITIVE:
+	    return lhs.as.primitive == rhs.as.primitive;
+	case TAG_STRING:
+	    return strcmp(lhs.as.string->items, rhs.as.string->items) == 0;
+	case TAG_NAMESPACED_SYMBOL:
+	case TAG_TYPED_SYMBOL:
+	case TAG_LIST:
+	    if(lhs.as.list->len != rhs.as.list->len) {
+		return 0;
+	    } else {
+		int i = 0;
+		for(i = 0; i < lhs.as.list->len; ++i) {
+		    if(!eql(lhs.as.list->items[i], rhs.as.list->items[i])) {
+			return 0;
+		    }
+		}
+		return 1;
 
-            }
-        default:
-            fatal_error("Tag %d not supported yet\n");
-        }
+	    }
+	default:
+	    fatal_error("Tag %d not supported yet\n");
+	}
     }
     return 0;
 }
@@ -595,15 +612,15 @@ struct Obj * plist_get(struct Obj * env, int argc, struct Obj * argv){
     Obj * start = plist->items;
     Obj * end = plist->items + plist->len;
     for(;start != end; ++start) {
-        if(start->tag == TAG_LIST && start->as.list->len >= 2) {
-            Obj first = start->as.list->items[0];
-            if(eql(first, key)) {
-                return &start->as.list->items[1];
-            }
-        } else {
-            write(stderr, *start);
-            fatal_error("Object is not an element of a plist");
-        }
+	if(start->tag == TAG_LIST && start->as.list->len >= 2) {
+	    Obj first = start->as.list->items[0];
+	    if(eql(first, key)) {
+		return &start->as.list->items[1];
+	    }
+	} else {
+	    write(stderr, *start);
+	    fatal_error("Object is not an element of a plist");
+	}
     }
     return NULL;
 }
@@ -611,13 +628,13 @@ struct Obj * plist_get(struct Obj * env, int argc, struct Obj * argv){
 void plist_set(List * plist, Obj key, Obj value) {
     Obj * found = plist_get(plist, key);
     if(found == NULL) {
-        Obj new_list = make_list(2);
-        list_push(new_list.as.list, key);
-        list_push(new_list.as.list, value);
-        list_push(plist, new_list);
+	Obj new_list = make_list(2);
+	list_push(new_list.as.list, key);
+	list_push(new_list.as.list, value);
+	list_push(plist, new_list);
     } else {
-        obj_free_recursive(found);
-        *found = obj_dup_recursive(value);
+	obj_free_recursive(found);
+	*found = obj_dup_recursive(value);
     }
 }
 
@@ -628,27 +645,27 @@ void plist_set(List * plist, Obj key, Obj value) {
 /* Env is a stack of property lists representing the currently available lexical scope*/
 Obj * env_get(List* env, Obj sym) {
     if(sym.tag == TAG_SYMBOL) {
-        Obj * start = env->items;
-        Obj * end = env->items + env->len;
-        for(;start < end; ++start) {
-            assert(start->tag == TAG_LIST);
-            {
-            Obj * found = plist_get(start->as.list, sym);
-            if(found != NULL) {
-                return found;
-            }
-            }
-        }
+	Obj * start = env->items;
+	Obj * end = env->items + env->len;
+	for(;start < end; ++start) {
+	    assert(start->tag == TAG_LIST);
+	    {
+		Obj * found = plist_get(start->as.list, sym);
+		if(found != NULL) {
+		    return found;
+		}
+	    }
+	}
     } else if(sym.tag == TAG_NAMESPACED_SYMBOL) {
-        Obj first = sym.as.list->items[0];
-        if(first.tag != TAG_SYMBOL) {
-            write(stderr, sym);
-            fatal_error("Invalid namespaced symbol");
-        }
-        /*TODO finish this function, lookup the namespace pointed to by first, then lookup second in that namespace*/
+	Obj first = sym.as.list->items[0];
+	if(first.tag != TAG_SYMBOL) {
+	    write(stderr, sym);
+	    fatal_error("Invalid namespaced symbol");
+	}
+	/*TODO finish this function, lookup the namespace pointed to by first, then lookup second in that namespace*/
     } else {
-        write(stderr, sym);
-        fatal_error("Invalid symbol type");
+	write(stderr, sym);
+	fatal_error("Invalid symbol type");
     }
 
     fatal_error("todo: figure out how to store environment frames");
@@ -678,20 +695,20 @@ Obj eval_expr(List * env, Obj expr) {
 
 void compile_sexpr(Obj src) {
     if(src.tag != TAG_LIST) {
-        write(stderr, src);
-        fatal_error("Expected top level expression to be a list");
+	write(stderr, src);
+	fatal_error("Expected top level expression to be a list");
     } else {
-        List * list = src.as.list;
-        Obj * elems = list->items;
-        int count = list->len;
-        if(count == 0) {
-            write(stderr, src);
-            fatal_error("Empty top level expr");
-        }
-        if(elems[0].tag != TAG_SYMBOL) {
-            write(stderr, src);
-            fatal_error("Expected sexpr to start with a symbol");
-        }
+	List * list = src.as.list;
+	Obj * elems = list->items;
+	int count = list->len;
+	if(count == 0) {
+	    write(stderr, src);
+	    fatal_error("Empty top level expr");
+	}
+	if(elems[0].tag != TAG_SYMBOL) {
+	    write(stderr, src);
+	    fatal_error("Expected sexpr to start with a symbol");
+	}
 
         
     }
