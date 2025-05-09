@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <ctype.h>
 
+#define BLOK(symbol) blok_##symbol
+
 void fatal_error(const char * fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -19,7 +21,6 @@ void fatal_error(const char * fmt, ...) {
 
 void parse_error(FILE * fp, const char * fmt, ...) {
     const long progress = ftell(fp);
-    long i = 0;
     rewind(fp);
     while(ftell(fp) < progress) {
 	fprintf(stderr, "%c", fgetc(fp));
@@ -112,50 +113,34 @@ int streql(const char * a, const char * b) {
 }
 
 /* ==== PRIMITIVE CONSTRUCTORS ==== */
-Obj make_nil(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_NIL;
-    return result;
-}
-Obj make_true(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_TRUE;
-    return result;
-}
-Obj make_false(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_FALSE;
-    return result;
-}
-Obj make_integer(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_INTEGER;
-    return result;
-}
-Obj make_floating(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_FLOATING;
-    return result;
-}
-Obj make_symbol(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_SYMBOL;
-    return result;
-}
-Obj make_primitive(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_PRIMITIVE;
-    return result;
-}
-Obj make_list(Obj * env, int argc, Obj * argv) {
-    Obj result = {0};
-    result.tag = TAG_LIST;
-    return result;
-}
+
+#define DEFINE_CONSTRUCTOR(fn_name, enum_tag)			  \
+    Obj fn_name(Obj * env, int argc, Obj * argv) {		  \
+	Obj result = {0};					  \
+	(void) env, (void)argc, (void)argv;			  \
+	result.tag = enum_tag;					  \
+	return result;						  \
+    }
+
+DEFINE_CONSTRUCTOR(make_nil, TAG_NIL);
+DEFINE_CONSTRUCTOR(make_true, TAG_TRUE);
+DEFINE_CONSTRUCTOR(make_false, TAG_FALSE);
+DEFINE_CONSTRUCTOR(make_integer, TAG_INTEGER);
+DEFINE_CONSTRUCTOR(make_floating, TAG_FLOATING);
+DEFINE_CONSTRUCTOR(make_symbol, TAG_SYMBOL);
+DEFINE_CONSTRUCTOR(make_primitive, TAG_PRIMITIVE);
+DEFINE_CONSTRUCTOR(make_list, TAG_LIST);
+DEFINE_CONSTRUCTOR(make_string, TAG_STRING);
+DEFINE_CONSTRUCTOR(make_plist, TAG_PLIST);
+DEFINE_CONSTRUCTOR(make_error, TAG_ERROR);
+DEFINE_CONSTRUCTOR(make_namespaced_symbol, TAG_NAMESPACED_SYMBOL);
+DEFINE_CONSTRUCTOR(make_typed_symbol, TAG_TYPED_SYMBOL);
+     
 
 
 
-Obj make_symbol(const char * name) {
+
+Obj make_symbol_internal(const char * name) {
     Obj result = {0}; 
     result.tag = TAG_SYMBOL;
     int i = 0;
@@ -174,7 +159,7 @@ Obj make_symbol(const char * name) {
     return result;
 }
 
-Obj make_primitive(Primitive fn) {
+Obj make_primitive_internal(Primitive fn) {
     Obj result = {0}; 
     result.tag = TAG_PRIMITIVE;
     result.as.primitive = fn;
@@ -182,7 +167,7 @@ Obj make_primitive(Primitive fn) {
 }
 
 
-Obj make_list(int initial_capacity) {
+Obj make_list_internal(int initial_capacity) {
     Obj result = {0};
     assert(initial_capacity >= 0);
     result.tag = TAG_LIST;
@@ -194,7 +179,7 @@ Obj make_list(int initial_capacity) {
 }
 
 
-Obj make_integer(int value) {
+Obj make_integer_internal(int value) {
     Obj result = {0};
     result.tag = TAG_INTEGER;
     result.as.integer = value;
