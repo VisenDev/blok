@@ -24,10 +24,12 @@ void parse_error(FILE * fp, const char * fmt, ...) {
         fprintf(stderr, "%c", fgetc(fp));
     }
     fprintf(stderr, "\n\n");
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    va_end(args);
+    {
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
     fprintf(stderr, "\n");
     fflush(stderr);
     abort();
@@ -53,7 +55,7 @@ typedef enum {
     BLOK_TAG_NAMESPACED_SYMBOL, /*list containing only symbols*/
     BLOK_TAG_TYPED_SYMBOL, /*property list containing type and name*/
     BLOK_TAG_ERROR, /*property list containing message and stack frames list */
-    BLOK_TAG_STACK_FRAME, /*property list containing line, file, and function */
+    BLOK_TAG_STACK_FRAME /*property list containing line, file, and function */
 } blok_Tag;
 
 static int blok_tag_is_list(blok_Tag tag) {
@@ -71,12 +73,11 @@ typedef struct {
 
 
 struct blok_Obj;
-typedef struct blok_Obj blok_Obj;
 
 typedef struct {
     int len;
     int cap;
-    blok_Obj * items;
+    struct blok_Obj * items;
 } blok_List;
 
 typedef struct {
@@ -85,7 +86,8 @@ typedef struct {
     char * items;
 } blok_String;
 
-typedef blok_Obj (*blok_Primitive) (blok_Obj * env, int argc, blok_Obj * argv);
+typedef struct blok_Obj (*blok_Primitive)
+    (struct blok_Obj * env, int argc, struct blok_Obj * argv[]);
 
 typedef struct blok_Obj {
     blok_Tag tag;
@@ -108,7 +110,7 @@ static int symbols_len;
 
 /* ==== PRIMITIVE CONSTRUCTORS ==== */
 #define BLOK_DEFINE_CONSTRUCTOR(fn_name, enum_tag)			  \
-blok_Obj fn_name(blok_Obj * env, int argc, blok_Obj * argv) {		  \
+blok_Obj fn_name(blok_Obj * env, int argc, blok_Obj ** argv) {		  \
     blok_Obj result = {0};					  \
     (void) env, (void)argc, (void)argv;			  \
     result.tag = enum_tag;					  \
@@ -156,22 +158,26 @@ blok_Obj blok_make_symbol_internal(const char * name) {
 
 
 /* ==== OBJECT AND MEMORY MANAGEMENT FUNCTIONS ==== */
-blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
+blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv[]) {
     int i = 0;
     (void)env;
     assert(argc == 1);
-        
-    if(blok_tag_is_list(argv[0].tag)) {
-        for(i = 0; i < argv[0].as.list.len; ++i) {
-            blok_obj_free(NULL, 1, &argv[0].as.list.items[i]);
-        }
-        free(argv[0].as.list.items);
-    } else if (argv[0].tag == BLOK_TAG_STRING) {
-        free(argv[0].as.string.items);
-    }
-    argv[0].tag = BLOK_TAG_NIL;
 
-    return blok_make_nil(NULL, 0, NULL);
+    {
+        blok_Obj object = *argv[0];
+        if(blok_tag_is_list(object.tag)) {
+            for(i = 0; i < object.as.list.len; ++i) {
+                blok_Obj * params[1] = {0};
+                params[0] = &object.as.list.items[0];
+                blok_obj_free(NULL, 1, params);
+            }
+            free(object.as.list.items);
+        } else if (object.tag == BLOK_TAG_STRING) {
+            free(object.as.string.items);
+        }
+        argv[0]->tag = BLOK_TAG_NIL;
+        return blok_make_nil(NULL, 0, NULL);
+    }
 }
 
 
@@ -718,7 +724,7 @@ void compile_toplevel(Obj src) {
 }
 
 
-int main() {
+int main(void) {
     printf("sizeof Obj: %zu\n\n", sizeof(Obj));
     FILE * fp = fopen("test.blok", "r");
     blok_Obj val = read(fp);
