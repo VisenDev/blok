@@ -28,8 +28,10 @@ typedef struct {
 } blok_Symbol;
 
 typedef struct {
-    int offset;
-} blok_Ptr;
+    int len;
+    int cap;
+    blok_Obj * ptr;
+} blok_List;
 
 struct blok_Obj;
 typedef struct blok_Obj blok_Obj;
@@ -43,17 +45,8 @@ typedef struct blok_Obj {
         float floating;
         blok_Symbol symbol;
         blok_Primitive primitive;
-        blok_Ptr ptr;
+        blok_List list;
     } as;
 } blok_Obj; 
-
-_Static_assert(sizeof(blok_Obj) == 4, "hello"
-              );
-
-#ifndef BLOK_HEAP_SIZE
-#   define BLOK_HEAP_SIZE 320000
-#endif /*BLOK_HEAP_SIZE*/
-
-blok_Obj blok_heap[BLOK_HEAP_SIZE] = {0};
 
 #endif /* BLOK_H */
