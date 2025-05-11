@@ -32,21 +32,6 @@ void parse_error(FILE * fp, const char * fmt, ...) {
     fflush(stderr);
     abort();
 }
-/*
-void * alloc(long bytes) {
-    int i = 0;
-    const int max_attempts = 10;
-    void * mem = malloc(bytes);
-    while(((long)mem & (~7)) != (long)mem) {
-	if(i > max_attempts) {
-	    fatal_error("allocating aligned memory failed");
-	}
-	free(mem);
-	mem = malloc(bytes);
-	++i;
-    }
-    return mem;
-}*/
 
 typedef enum {
 
@@ -61,14 +46,24 @@ typedef enum {
     BLOK_TAG_SYMBOL,
     BLOK_TAG_PRIMITIVE,
     BLOK_TAG_STRING,
-    BLOK_TAG_ERROR,
 
     /* types stored in lists (dynamic allocation) */
     BLOK_TAG_LIST, /*basic list*/
     BLOK_TAG_PLIST, /*property (association) list*/
     BLOK_TAG_NAMESPACED_SYMBOL, /*list containing only symbols*/
     BLOK_TAG_TYPED_SYMBOL, /*property list containing type and name*/
+    BLOK_TAG_ERROR, /*property list containing message and stack frames list */
+    BLOK_TAG_STACK_FRAME, /*property list containing line, file, and function */
 } blok_Tag;
+
+static int blok_tag_is_list(blok_Tag tag) {
+    return tag == BLOK_TAG_LIST 
+        || tag == BLOK_TAG_PLIST
+        || tag == BLOK_TAG_NAMESPACED_SYMBOL
+        || tag == BLOK_TAG_TYPED_SYMBOL
+        || tag == BLOK_TAG_ERROR
+        || tag == BLOK_TAG_STACK_FRAME;
+}
 
 typedef struct {
     int lookup_index;
@@ -81,25 +76,14 @@ typedef struct blok_Obj blok_Obj;
 typedef struct {
     int len;
     int cap;
-    blok_Obj * ptr;
+    blok_Obj * items;
 } blok_List;
 
 typedef struct {
     int len;
     int cap;
-    char * ptr;
+    char * items;
 } blok_String;
-
-typedef struct {
-    int line;
-    const char * file;
-    const char * function;
-} blok_StackFrame;
-
-typedef struct {
-    blok_List stack_trace;
-    const char * message;
-} blok_Error;
 
 typedef blok_Obj (*blok_Primitive) (blok_Obj * env, int argc, blok_Obj * argv);
 
@@ -111,7 +95,6 @@ typedef struct blok_Obj {
         blok_Symbol symbol;
         blok_Primitive primitive;
         blok_String string;
-        blok_Error error;
         blok_List list;
     } as;
 } blok_Obj; 
@@ -132,21 +115,21 @@ blok_Obj fn_name(blok_Obj * env, int argc, blok_Obj * argv) {		  \
     return result;						  \
 }
 
-BLOK_DEFINE_CONSTRUCTOR(blok_make_nil, BLOK_TAG_NIL);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_true, BLOK_TAG_TRUE);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_false, BLOK_TAG_FALSE);
+BLOK_DEFINE_CONSTRUCTOR(blok_make_nil, BLOK_TAG_NIL)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_true, BLOK_TAG_TRUE)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_false, BLOK_TAG_FALSE)
 
-BLOK_DEFINE_CONSTRUCTOR(blok_make_integer, BLOK_TAG_INTEGER);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_floating, BLOK_TAG_FLOATING);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_symbol, BLOK_TAG_SYMBOL);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_primitive, BLOK_TAG_PRIMITIVE);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_string, BLOK_TAG_STRING);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_error, BLOK_TAG_ERROR);
+BLOK_DEFINE_CONSTRUCTOR(blok_make_integer, BLOK_TAG_INTEGER)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_floating, BLOK_TAG_FLOATING)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_symbol, BLOK_TAG_SYMBOL)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_primitive, BLOK_TAG_PRIMITIVE)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_string, BLOK_TAG_STRING)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_error, BLOK_TAG_ERROR)
 
-BLOK_DEFINE_CONSTRUCTOR(blok_make_list, BLOK_TAG_LIST);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_plist, BLOK_TAG_PLIST);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_namespaced_symbol, BLOK_TAG_NAMESPACED_SYMBOL);
-BLOK_DEFINE_CONSTRUCTOR(blok_make_typed_symbol, BLOK_TAG_TYPED_SYMBOL);
+BLOK_DEFINE_CONSTRUCTOR(blok_make_list, BLOK_TAG_LIST)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_plist, BLOK_TAG_PLIST)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_namespaced_symbol, BLOK_TAG_NAMESPACED_SYMBOL)
+BLOK_DEFINE_CONSTRUCTOR(blok_make_typed_symbol, BLOK_TAG_TYPED_SYMBOL)
      
 #undef BLOK_DEFINE_CONSTRUCTOR
 
@@ -170,6 +153,139 @@ blok_Obj blok_make_symbol_internal(const char * name) {
 }
 
 
+
+
+/* ==== OBJECT AND MEMORY MANAGEMENT FUNCTIONS ==== */
+blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
+    int i = 0;
+    (void)env;
+    assert(argc == 1);
+        
+    if(blok_tag_is_list(argv[0].tag)) {
+        for(i = 0; i < argv[0].as.list.len; ++i) {
+            blok_obj_free(NULL, 1, &argv[0].as.list.items[i]);
+        }
+        free(argv[0].as.list.items);
+    } else if (argv[0].tag == BLOK_TAG_STRING) {
+        free(argv[0].as.string.items);
+    }
+    argv[0].tag = BLOK_TAG_NIL;
+
+    return blok_make_nil(NULL, 0, NULL);
+}
+
+
+/*prototype for duplication*/
+blok_Obj blok_obj_dup(blok_Obj * env, int argc, blok_Obj * argv);
+
+
+/* Utility functions */
+void blok_list_ensure_capacity(blok_Obj * env, int argc, blok_Obj * argv) {
+    (void) env;
+    assert(argc == 2);
+    assert(blok_tag_is_list(argv[0].tag));
+    assert(argv[1].tag == BLOK_TAG_INTEGER);
+    {
+        blok_List * self = &argv[0].as.list;
+        int required_capacity = argv[1].as.integer;
+
+        if(self->cap == 0) {
+            self->cap = required_capacity;
+            self->len= 0;
+            self->items = malloc(sizeof(blok_Obj) * self->cap);
+        } else if(self->cap < required_capacity) {
+            self->cap = required_capacity;
+            self->items = realloc(self->items, self->cap * sizeof(blok_Obj));
+        }
+    }
+}
+
+/* item is copied not referenced */
+void blok_list_push(blok_Obj * env, int argc, blok_Obj * argv) {
+    (void) env;
+    assert(argc == 2);
+    assert(blok_tag_is_list(argv[0].tag));
+    {
+        blok_List * self = &argv[0].as.list;
+        blok_Obj item = argv[1];
+        if(self->len >= self->cap) {
+
+            /* TODO: fix this so that it isn't just the local copy of the list 
+             * that gets modified
+             */
+            blok_Obj params[2];
+            params[0] = argv[0];
+            params[1] = blok_make_integer(NULL, 0, NULL);
+            params[1].as.integer = self->cap * 2 + 1;
+            blok_list_ensure_capacity(NULL, 2, params);
+        }
+        self->items[self->len] = blok_obj_dup(NULL, 1, &item);
+        ++self->len;
+    }
+}
+
+/* function does not free the popped item */
+blok_Obj blok_list_pop (blok_Obj * env, int argc, blok_Obj * argv) {
+    (void) env;
+    assert(argc == 1);
+    assert(blok_tag_is_list(argv[0].tag));
+    {
+        blok_List * self = &argv[0].as.list;
+        blok_Obj result = blok_make_integer(NULL, 0, NULL);
+        --self->len;
+        result = self->items[self->len];
+        return result;
+    }
+}
+
+/* function duplicates the returned item */
+blok_Obj blok_list_get (blok_Obj * env, int argc, blok_Obj * argv) {
+    (void) env;
+    assert(argc == 2);
+    assert(blok_tag_is_list(argv[0].tag));
+    assert(argv[1].tag == BLOK_TAG_INTEGER);
+    {
+        blok_List self = argv[0].as.list;
+        int i = argv[1].as.integer;
+        if(i <= 0 || i > self.len) {
+            return blok_make_nil(NULL, 0, NULL);
+        } else {
+            return blok_obj_dup(NULL, 1, &self.items[i]);
+        }
+    }
+}
+
+void list_set(blok_Obj * env, int argc, blok_Obj * argv) {
+    (void) env;
+    assert(argc == 3);
+    assert(blok_tag_is_list(argv[0].tag));
+    assert(argv[1].tag == BLOK_TAG_INTEGER);
+    {
+        blok_List * self = &argv[0].as.list;
+        int i = argv[1].as.integer;
+        blok_Obj item = argv[2];
+
+        if(i >= self->len) {
+            for(j = 0; j < i + 1; ++j) {
+                blok_list_push(self, make_nil());
+            }
+        }
+        obj_free_recursive(&self->items[i]);
+        self->items[i] = obj_dup_recursive(value);
+    }
+}
+
+/*Duplication functions */
+blok_Obj list_duplicate(const List * self) {
+    int i = 0;
+    blok_Obj result = make_list(self->len);
+    for(i = 0; i < self->len; ++i) {
+	list_push(result.as.list, obj_dup_recursive(self->items[i]));
+    }
+    return result;
+}
+
+
 /* ==== BLOK ERROR FUNCTIONS ==== */
 blok_Obj blok_make_error_internal(const char * message) {
     blok_Obj err = blok_make_error(NULL, 0, NULL);
@@ -185,88 +301,6 @@ blok_Obj blok_error_append_stack_frame(
         const char * function,
         ) {
 
-
-/* ==== IMPLEMENTATION FUNCTIONS ==== */
-blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
-    int i = 0;
-    (void)env;
-        
-    switch(argv[0].tag) {
-    case BLOK_TAG_LIST:
-	for(int i = 0; i < argv[0].as.list.len; ++i) {
-	    blok_obj_free(NULL, 1, argv[0].as.list.items[i]);
-	}
-	free(argv[0].as.list->items);
-	free(argv[0].as.list);
-	break;
-    default:
-	break;
-    }
-    argv[0].tag = BLOK_TAG_NIL;
-
-    return make_nil();
-}
-
-
-/*prototype for duplication*/
-blok_Obj obj_dup_recursive(Obj env, int argc, Obj * argv);
-
-
-/* Utility functions */
-void list_ensure_capacity(List * self, int new_cap) {
-    if(self->cap == 0) {
-	self->cap = new_cap;
-	self->len= 0;
-	self->items = malloc(sizeof(Obj) * self->cap);
-    } else if(self->cap < new_cap) {
-	self->cap = new_cap;
-	self->items = realloc(self->items, self->cap * sizeof(Obj));
-    }
-}
-
-/* item is copied not referenced */
-void list_push(List * self, Obj item) {
-    if(self->len >= self->cap) {
-	list_ensure_capacity(self, self->cap * 2 + 1);
-    }
-    self->items[self->len] = obj_dup_recursive(item);
-    ++self->len;
-}
-
-blok_Obj list_pop(List * self) {
-    --self->len;
-    return self->items[self->len];
-}
-
-blok_Obj list_get(const List * self, int i) {
-    if(i <= 0 || i > self->len) {
-	return make_nil();
-    } else {
-	return obj_dup_recursive(self->items[i]);
-    }
-}
-
-void list_set(List * self, int i, Obj value) {
-    assert(i >= 0);
-    if(i >= self->len) {
-	int j = 0;
-	list_ensure_capacity(self, i + 1);
-	for(j = 0; j < i + 1; ++j) {
-	    list_push(self, make_nil());
-	}
-    }
-    obj_free_recursive(&self->items[i]);
-    self->items[i] = obj_dup_recursive(value);
-}
-
-/*Duplication functions */
-blok_Obj list_duplicate(const List * self) {
-    int i = 0;
-    blok_Obj result = make_list(self->len);
-    for(i = 0; i < self->len; ++i) {
-	list_push(result.as.list, obj_dup_recursive(self->items[i]));
-    }
-    return result;
 }
 
 /* Duplicate an object */
