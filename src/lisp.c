@@ -7,8 +7,6 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#define BLOK(symbol) blok_##symbol
-
 void fatal_error(const char * fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -76,11 +74,11 @@ typedef enum {
 struct Obj;
 typedef struct Obj Obj;
 
-typedef struct {
-    void * items;
-    int len;
-    int cap;
-} List;
+/* typedef struct { */
+/*     void * items; */
+/*     int len; */
+/*     int cap; */
+/* } List; */
 
 typedef struct {
     int lookup_index;
@@ -96,7 +94,7 @@ typedef struct Obj {
 	Symbol symbol;
 	Primitive primitive;
 
-	List * list;
+	void * list;
     } as;
 } Obj; 
 
@@ -136,13 +134,12 @@ DEFINE_CONSTRUCTOR(make_error, TAG_ERROR);
 DEFINE_CONSTRUCTOR(make_namespaced_symbol, TAG_NAMESPACED_SYMBOL);
 DEFINE_CONSTRUCTOR(make_typed_symbol, TAG_TYPED_SYMBOL);
      
-
+#undef DEFINE_CONSTRUCTOR
 
 
 
 Obj make_symbol_internal(const char * name) {
-    Obj result = {0}; 
-    result.tag = TAG_SYMBOL;
+    Obj result = make_symbol(); 
     int i = 0;
     for(i = 0; i < symbols_len; ++i) {
 	if(streql(name, symbols[i])) {
@@ -160,17 +157,15 @@ Obj make_symbol_internal(const char * name) {
 }
 
 Obj make_primitive_internal(Primitive fn) {
-    Obj result = {0}; 
-    result.tag = TAG_PRIMITIVE;
+    Obj result = make_primitive; 
     result.as.primitive = fn;
     return result;
 }
 
 
-Obj make_list_internal(int initial_capacity) {
-    Obj result = {0};
+Obj make_list_internal() {
+    Obj result = make_list();
     assert(initial_capacity >= 0);
-    result.tag = TAG_LIST;
     result.as.list = malloc(sizeof(List));
     result.as.list->items = malloc(sizeof(Obj) * initial_capacity);
     result.as.list->len = 0;

@@ -1,0 +1,18 @@
+defun isspace {ch} {
+    return {or {== ch 10} {== ch 20} };
+};
+
+defstruct settings {
+    int indentation;
+    int count;
+    int min;
+    object extra;
+};
+
+defun main {} {
+    local settings {settings-table};
+    printf settings.indentation;
+    printf "Hello world\n";
+    printf "%d" {isspace " "};
+    return 0;
+};
