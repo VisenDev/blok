@@ -48,6 +48,7 @@ typedef enum {
     BLOK_TAG_SYMBOL,
     BLOK_TAG_PRIMITIVE,
     BLOK_TAG_STRING,
+    BLOK_TAG_REFERENCE,
 
     /* types stored in lists (dynamic allocation) */
     BLOK_TAG_LIST, /*basic list*/
@@ -87,7 +88,7 @@ typedef struct {
 } blok_String;
 
 typedef struct blok_Obj (*blok_Primitive)
-    (struct blok_Obj * env, int argc, struct blok_Obj * argv[]);
+    (struct blok_Obj * env, int argc, struct blok_Obj * argv);
 
 typedef struct blok_Obj {
     blok_Tag tag;
@@ -97,6 +98,7 @@ typedef struct blok_Obj {
         blok_Symbol symbol;
         blok_Primitive primitive;
         blok_String string;
+        struct blok_Obj * reference;
         blok_List list;
     } as;
 } blok_Obj; 
@@ -110,7 +112,7 @@ static int symbols_len;
 
 /* ==== PRIMITIVE CONSTRUCTORS ==== */
 #define BLOK_DEFINE_CONSTRUCTOR(fn_name, enum_tag)			  \
-blok_Obj fn_name(blok_Obj * env, int argc, blok_Obj ** argv) {		  \
+blok_Obj fn_name(blok_Obj * env, int argc, blok_Obj * argv) {		  \
     blok_Obj result = {0};					  \
     (void) env, (void)argc, (void)argv;			  \
     result.tag = enum_tag;					  \
@@ -158,7 +160,7 @@ blok_Obj blok_make_symbol_internal(const char * name) {
 
 
 /* ==== OBJECT AND MEMORY MANAGEMENT FUNCTIONS ==== */
-blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv[]) {
+blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
     int i = 0;
     (void)env;
     assert(argc == 1);
