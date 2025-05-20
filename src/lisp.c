@@ -87,8 +87,11 @@ typedef struct {
     char * items;
 } blok_String;
 
-typedef struct blok_Obj (*blok_Primitive)
-    (struct blok_Obj * env, int argc, struct blok_Obj * argv);
+typedef struct blok_Obj (*blok_Primitive)(struct blok_Obj *env,
+                                          struct blok_Obj arg1,
+                                          struct blok_Obj arg2,
+                                          struct blok_Obj arg3,
+                                          struct blok_Obj arg4);
 
 typedef struct blok_Obj {
     blok_Tag tag;
@@ -97,17 +100,17 @@ typedef struct blok_Obj {
         float floating;
         blok_Symbol symbol;
         blok_Primitive primitive;
-        blok_String string;
+        blok_String * string;
         struct blok_Obj * reference;
-        blok_List list;
+        blok_List * list;
     } as;
 } blok_Obj; 
 
 /* Symbol handling */
 #define max_symbols 4096
 #define max_symbol_len 128
-static char symbols[max_symbols][max_symbol_len];
-static int symbols_len;
+static char symbols[max_symbols][max_symbol_len] = {0};
+static int symbols_len = 0;
 
 
 /* ==== PRIMITIVE CONSTRUCTORS ==== */
@@ -160,7 +163,16 @@ blok_Obj blok_make_symbol_internal(const char * name) {
 
 
 /* ==== OBJECT AND MEMORY MANAGEMENT FUNCTIONS ==== */
-blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
+
+blok_Primitive blok_builtin_primitives[1024];
+int blok_builtin_primitives_len = 0;
+
+blok_Obj blok_obj_free(
+        struct blok_Obj *env,
+        blok_Obj arg1,
+        blok_Obj arg2,
+        blok_Obj arg3,
+        blok_Obj arg4) {
     int i = 0;
     (void)env;
     assert(argc == 1);
@@ -182,6 +194,8 @@ blok_Obj blok_obj_free(blok_Obj * env, int argc, blok_Obj * argv) {
     }
 }
 
+blok_builtin_primitives[blok_builtin_primitives_len++] = blok_obj_free;
+
 
 /*prototype for duplication*/
 blok_Obj blok_obj_dup(blok_Obj * env, int argc, blok_Obj * argv);
@@ -200,7 +214,7 @@ void blok_list_ensure_capacity(blok_Obj * env, int argc, blok_Obj * argv) {
         if(self->cap == 0) {
             self->cap = required_capacity;
             self->len= 0;
-            self->items = malloc(sizeof(blok_Obj) * self->cap);
+            self->items = aligned_alloc(sizeof(blok_Obj) * self->cap, 64);
         } else if(self->cap < required_capacity) {
             self->cap = required_capacity;
             self->items = realloc(self->items, self->cap * sizeof(blok_Obj));
