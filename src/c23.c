@@ -10,13 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-//#ifdef __linux__
-//#   include <sys/mman.h>
-//#   include <fcntl.h>
-//#   include <bits/mman-linux.h>
-//#endif 
-//#include "3rdparty/rpmalloc/rpmalloc.c"
-
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
         const long progress = ftell(fp);
@@ -66,6 +59,7 @@ typedef struct {
     char ptr[];
 } blok_String;
 
+_Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
 _Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
@@ -96,7 +90,7 @@ blok_Obj blok_make_string(const char * str) {
     blok_String * blok_str = malloc(size);
     assert(((uintptr_t)blok_str & 0b1111) == 0);
     blok_str->len = len;
-    blok_str->cap = len;
+    blok_str->cap = 2*len;
     memcpy(blok_str->ptr, str, len + 1);
 
     blok_Obj result = {.ptr = blok_str};
@@ -125,7 +119,7 @@ void blok_list_append(blok_Obj * list, blok_Obj item) {
     blok_List * l = blok_list_from_obj(*list);
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = realloc(l, l->cap);
+        l = realloc(l, sizeof(blok_List) + l->cap * sizeof(blok_Obj));
     }
     l->items[l->len++] = item;
 
@@ -137,11 +131,11 @@ void blok_list_append(blok_Obj * list, blok_Obj item) {
 void blok_string_append(blok_Obj * str, char ch) {
     char tag = str->tag;
     blok_String * l = blok_string_from_obj(*str);
-    if(l->len + 1 >= l->cap) {
-        l->cap = l->cap * 2 + 1;
-        l = realloc(l, l->cap);
-        printf("string realloc: %d\n", l->cap);
-        fflush(stdout);
+    if(l->len + 2 >= l->cap) {
+        l->cap = l->cap * 2 + 2;
+        l = realloc(l, sizeof(blok_String) + l->cap * sizeof(char));
+        /*printf("string realloc: %d\n", l->cap);*/
+        /*fflush(stdout);*/
     }
     l->ptr[l->len++] = ch;
     l->ptr[l->len] = 0;
@@ -346,6 +340,27 @@ blok_Obj blok_reader_read(FILE * fp) {
     return result;
 }
 
+typedef struct {
+    blok_String name;
+    blok_Obj value;
+} blok_Variable;
+
+typedef struct {
+} blok_Env;
+
+blok_Obj blok_evaluator_eval(blok_Obj obj) {
+    switch(obj.tag) {
+        case BLOK_TAG_NIL:
+        case BLOK_TAG_INT:
+        case BLOK_TAG_STRING:
+            return obj;
+
+
+
+    }
+
+    return blok_make_nil();
+}
 
 
 int main(void) {
