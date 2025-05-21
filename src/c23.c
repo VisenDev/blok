@@ -80,6 +80,7 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
     return result;
 }
 
+
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
     const int32_t size = ((sizeof(blok_String) / 8 + 1) + (len / 8 + 1)) * 8;
@@ -108,6 +109,15 @@ blok_String * blok_string_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_STRING | obj.tag == BLOK_TAG_SYMBOL);
     obj.tag = 0;
     return (blok_String *) obj.ptr;
+}
+
+void blok_list_append(blok_Obj list, blok_Obj item) {
+    blok_List * l = blok_list_from_obj(list);
+    if(l->len >= l->cap) {
+        l->cap = l->cap * 2 + 1;
+        l = realloc(l, l->cap);
+    }
+    l->items[l->len++] = item;
 }
 
 void blok_print(blok_Obj obj) {
@@ -204,14 +214,31 @@ blok_Obj blok_reader_parse_int(FILE * fp) {
     return blok_make_int(num);
 }
 
-blok_Obj blok_reader_read(FILE * fp) {
+blok_Obj blok_reader_read(FILE *);
+blok_Obj blok_reader_read_obj(FILE * fp) {
     blok_reader_skip_whitespace(fp);
     const char ch = blok_reader_peek(fp);
 
     if(isdigit(ch)) {
-        
+        return blok_reader_parse_int(fp); 
+    } else if(ch == '(') {
+        fgetc(fp);
+        blok_Obj result = blok_reader_read(fp);
+        if(blok_reader_peek(fp) != ')') fatal_error(fp, "Expected close parens");
+        fgetc(fp);
+        return result;
     }
     return blok_make_nil();
+}
+
+blok_Obj blok_reader_read(FILE * fp) {
+    blok_Obj result = blok_make_list(8);
+    blok_reader_skip_whitespace(fp);
+    while(!feof(fp) && blok_reader_peek(fp) != ')') {
+        blok_list_append(result, blok_reader_read_obj(fp));
+        blok_reader_skip_whitespace(fp);
+    }
+    return result;
 }
 
 
