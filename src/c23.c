@@ -10,6 +10,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+//#ifdef __linux__
+#   include <sys/mman.h>
+#   include <fcntl.h>
+#   include <bits/mman-linux.h>
+//#endif 
+#include "3rdparty/rpmalloc/rpmalloc.h"
+
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
         const long progress = ftell(fp);
@@ -74,7 +81,7 @@ blok_Obj blok_make_nil(void) {
 
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
-    blok_List * list = malloc(size);
+    blok_List * list = rpmalloc(size);
     memset(list, 0, size);
     blok_Obj result = {.ptr = list};
     result.tag = BLOK_TAG_LIST;
@@ -84,8 +91,9 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
-    const int32_t size = ((sizeof(blok_String) / 8 + 2) + (len / 8 + 2)) * 8;
-    blok_String * blok_str = aligned_alloc(8, size);
+    /*const int32_t size = ((sizeof(blok_String) / 8 + 2) + (len / 8 + 2)) * 8;*/
+    const int32_t size = sizeof(blok_String) + len;
+    blok_String * blok_str = rpmalloc(size);
     assert(((uintptr_t)blok_str & 0b1111) == 0);
     blok_str->len = len;
     blok_str->cap = size;
@@ -117,7 +125,7 @@ void blok_list_append(blok_Obj list, blok_Obj item) {
     blok_List * l = blok_list_from_obj(list);
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = realloc(l, l->cap);
+        l = rprealloc(l, l->cap);
     }
     l->items[l->len++] = item;
 }
@@ -126,7 +134,7 @@ void blok_string_append(blok_Obj str, char ch) {
     blok_String * l = blok_string_from_obj(str);
     if(l->len >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = realloc(l, l->cap);
+        l = rprealloc(l, l->cap);
     }
     l->ptr[l->len++] = ch;
     l->ptr[l->len] = 0;
@@ -175,12 +183,12 @@ void blok_obj_free(const blok_Obj obj) {
                 for(int i = 0; i < list->len; ++i) {
                     blok_obj_free(list->items[i]);
                 }
-                free(list);
+                rpfree(list);
             }
             break;
         case BLOK_TAG_STRING:
         case BLOK_TAG_SYMBOL:
-            free(blok_string_from_obj(obj));
+            rpfree(blok_string_from_obj(obj));
             break;
         default:
             break;
@@ -326,8 +334,17 @@ blok_Obj blok_reader_read(FILE * fp) {
 
 
 int main(void) {
+    rpmalloc_interface_t rpi = {0};
+    rpmalloc_initialize(&rpi);
     FILE * fp = fopen("c23-test.lisp", "r");
     blok_print(blok_reader_read(fp));
+
+    fclose(fp);
+    rpmalloc_finalize();
+    return 0;
+}
+
+
     /*
     blok_Obj c = blok_make_list(10);
     blok_List * l = blok_list_from_obj(c);
@@ -337,7 +354,3 @@ int main(void) {
     blok_print(c);
     blok_obj_free(c);
     */
-
-    fclose(fp);
-    return 0;
-}
