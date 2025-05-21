@@ -2,4 +2,5 @@
 (foo bar)
 (add 1 2)
 (print "hello there\n")
+(print "hello there")
 (hi there hello)

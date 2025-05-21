@@ -11,11 +11,11 @@
 #include <stdint.h>
 
 //#ifdef __linux__
-#   include <sys/mman.h>
-#   include <fcntl.h>
-#   include <bits/mman-linux.h>
+//#   include <sys/mman.h>
+//#   include <fcntl.h>
+//#   include <bits/mman-linux.h>
 //#endif 
-#include "3rdparty/rpmalloc/rpmalloc.h"
+//#include "3rdparty/rpmalloc/rpmalloc.c"
 
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
@@ -66,6 +66,7 @@ typedef struct {
     char ptr[];
 } blok_String;
 
+_Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(void(*)(void)) >= 8, "Alignment of function pointers is too small");
@@ -81,7 +82,7 @@ blok_Obj blok_make_nil(void) {
 
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
-    blok_List * list = rpmalloc(size);
+    blok_List * list = malloc(size);
     memset(list, 0, size);
     blok_Obj result = {.ptr = list};
     result.tag = BLOK_TAG_LIST;
@@ -91,12 +92,11 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
-    /*const int32_t size = ((sizeof(blok_String) / 8 + 2) + (len / 8 + 2)) * 8;*/
-    const int32_t size = sizeof(blok_String) + len;
-    blok_String * blok_str = rpmalloc(size);
+    const int32_t size = sizeof(blok_String) + 2*len + 1;
+    blok_String * blok_str = malloc(size);
     assert(((uintptr_t)blok_str & 0b1111) == 0);
     blok_str->len = len;
-    blok_str->cap = size;
+    blok_str->cap = len;
     memcpy(blok_str->ptr, str, len + 1);
 
     blok_Obj result = {.ptr = blok_str};
@@ -121,23 +121,33 @@ blok_String * blok_string_from_obj(blok_Obj obj) {
     return (blok_String *) obj.ptr;
 }
 
-void blok_list_append(blok_Obj list, blok_Obj item) {
-    blok_List * l = blok_list_from_obj(list);
+void blok_list_append(blok_Obj * list, blok_Obj item) {
+    blok_List * l = blok_list_from_obj(*list);
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = rprealloc(l, l->cap);
+        l = realloc(l, l->cap);
     }
     l->items[l->len++] = item;
+
+
+    list->ptr = l;
+    list->tag = BLOK_TAG_LIST;
 }
 
-void blok_string_append(blok_Obj str, char ch) {
-    blok_String * l = blok_string_from_obj(str);
-    if(l->len >= l->cap) {
+void blok_string_append(blok_Obj * str, char ch) {
+    char tag = str->tag;
+    blok_String * l = blok_string_from_obj(*str);
+    if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = rprealloc(l, l->cap);
+        l = realloc(l, l->cap);
+        printf("string realloc: %d\n", l->cap);
+        fflush(stdout);
     }
     l->ptr[l->len++] = ch;
     l->ptr[l->len] = 0;
+
+    str->ptr = l;
+    str->tag = tag;
 }
 
 void blok_print(blok_Obj obj) {
@@ -183,12 +193,12 @@ void blok_obj_free(const blok_Obj obj) {
                 for(int i = 0; i < list->len; ++i) {
                     blok_obj_free(list->items[i]);
                 }
-                rpfree(list);
+                free(list);
             }
             break;
         case BLOK_TAG_STRING:
         case BLOK_TAG_SYMBOL:
-            rpfree(blok_string_from_obj(obj));
+            free(blok_string_from_obj(obj));
             break;
         default:
             break;
@@ -217,6 +227,7 @@ char blok_reader_peek(FILE * fp) {
 }
 
 void blok_reader_skip_whitespace(FILE * fp) {
+    if(feof(fp)) return;
     while(blok_reader_is_whitespace(blok_reader_peek(fp))) getc(fp);
 }
 
@@ -251,8 +262,11 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
             case BLOK_READER_STATE_BASE:
                 if(ch == '\\') {
                     state = BLOK_READER_STATE_ESCAPE;
+                } else if (ch == '"') {
+                    fgetc(fp);
+                    return str;
                 } else {
-                    blok_string_append(str, fgetc(fp));
+                    blok_string_append(&str, fgetc(fp));
                 }
                 break;
             case BLOK_READER_STATE_ESCAPE:
@@ -261,13 +275,13 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
                 char escape = fgetc(fp);
                 switch(escape) {
                     case 'n':
-                        blok_string_append(str, '\n');
+                        blok_string_append(&str, '\n');
                         break;
                     case '"':
-                        blok_string_append(str, '"');
+                        blok_string_append(&str, '"');
                         break;
                     case '\'':
-                        blok_string_append(str, '\'');
+                        blok_string_append(&str, '\'');
                         break;
                     default:
                         fatal_error(fp, "Unknown string escape: \"\\%c\"", escape);
@@ -277,6 +291,7 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
                 break;
         }
     }
+    return str;
 }
 
 bool blok_is_symbol_char(char ch) {
@@ -287,10 +302,10 @@ blok_Obj blok_reader_parse_symbol(FILE * fp) {
     blok_Obj sym = blok_make_symbol("");
     assert(isalpha(blok_reader_peek(fp)));
     char ch = fgetc(fp);
-    blok_string_append(sym, ch);
+    blok_string_append(&sym, ch);
 
     while(blok_is_symbol_char(blok_reader_peek(fp))) {
-        blok_string_append(sym, fgetc(fp));
+        blok_string_append(&sym, fgetc(fp));
     }
     
     return sym;
@@ -325,7 +340,7 @@ blok_Obj blok_reader_read(FILE * fp) {
     blok_Obj result = blok_make_list(8);
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        blok_list_append(result, blok_reader_read_obj(fp));
+        blok_list_append(&result, blok_reader_read_obj(fp));
         blok_reader_skip_whitespace(fp);
     }
     return result;
@@ -334,13 +349,10 @@ blok_Obj blok_reader_read(FILE * fp) {
 
 
 int main(void) {
-    rpmalloc_interface_t rpi = {0};
-    rpmalloc_initialize(&rpi);
     FILE * fp = fopen("c23-test.lisp", "r");
     blok_print(blok_reader_read(fp));
 
     fclose(fp);
-    rpmalloc_finalize();
     return 0;
 }
 
