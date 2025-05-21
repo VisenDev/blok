@@ -34,6 +34,7 @@ typedef enum {
     BLOK_TAG_LIST,
     BLOK_TAG_PRIMITIVE,
     BLOK_TAG_STRING,
+    BLOK_TAG_KEYVALUE,
     BLOK_TAG_SYMBOL,
 } blok_Tag;
 
@@ -56,8 +57,24 @@ typedef struct {
 typedef struct {
     int32_t len;
     int32_t cap;
-    char ptr[];
+    char * ptr;
 } blok_String;
+
+#define BLOK_SYMBOL_MAX_LEN 64
+typedef struct {
+    char buf[BLOK_SYMBOL_MAX_LEN];
+} blok_Symbol;
+
+typedef struct {
+    blok_Symbol key;
+    blok_Obj value;
+} blok_KeyValue;
+
+typedef struct {
+    int count;
+    int cap;
+    blok_KeyValue * items;
+} blok_Table;
 
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
 _Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
@@ -99,7 +116,10 @@ blok_Obj blok_make_string(const char * str) {
 }
 
 blok_Obj blok_make_symbol(const char * str) {
-    blok_Obj result = blok_make_string(str);
+    blok_Symbol * sym = malloc(sizeof(blok_Symbol));
+    strncpy(sym->buf, str, BLOK_SYMBOL_MAX_LEN - 1);
+    blok_Obj result = {0};
+    result.ptr = sym;
     result.tag = BLOK_TAG_SYMBOL;
     return result;
 }
@@ -109,8 +129,9 @@ blok_List * blok_list_from_obj(blok_Obj obj) {
     obj.tag = 0;
     return (blok_List *) obj.ptr;
 }
+
 blok_String * blok_string_from_obj(blok_Obj obj) {
-    assert(obj.tag == BLOK_TAG_STRING | obj.tag == BLOK_TAG_SYMBOL);
+    assert(obj.tag == BLOK_TAG_STRING);
     obj.tag = 0;
     return (blok_String *) obj.ptr;
 }
@@ -344,9 +365,6 @@ typedef struct {
     blok_String name;
     blok_Obj value;
 } blok_Variable;
-
-typedef struct {
-} blok_Env;
 
 blok_Obj blok_evaluator_eval(blok_Obj obj) {
     switch(obj.tag) {
