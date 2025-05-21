@@ -1,4 +1,7 @@
 #include <stdlib.h>
+#include <errno.h>
+#include <ctype.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <stdalign.h>
 #include <stdarg.h>
@@ -31,6 +34,7 @@ typedef enum {
     BLOK_TAG_LIST,
     BLOK_TAG_PRIMITIVE,
     BLOK_TAG_STRING,
+    BLOK_TAG_SYMBOL,
 } blok_Tag;
 
 typedef union {
@@ -57,7 +61,7 @@ typedef struct {
 _Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(void(*)(void)) >= 8, "Alignment of function pointers is too small");
-_Static_assert(sizeof(void*) == 8, "Expect pointers to be 8 bytes");
+_Static_assert(sizeof(void*) == 8, "Expected pointers to be 8 bytes");
 
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .data = data};
@@ -78,15 +82,21 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
-    const int32_t size = sizeof(blok_String) + len;
-    blok_String * blok_str = malloc(size);
+    const int32_t size = ((sizeof(blok_String) / 8 + 1) + (len / 8 + 1)) * 8;
+    blok_String * blok_str = aligned_alloc(8, size);
+    assert(((uintptr_t)blok_str & 0b1111) == 0);
     blok_str->len = len;
-    memcpy(blok_str->ptr, str, len);
+    memcpy(blok_str->ptr, str, len + 1);
 
     blok_Obj result = {.ptr = blok_str};
     result.tag = BLOK_TAG_STRING;
     return result;
+}
 
+blok_Obj blok_make_symbol(const char * str) {
+    blok_Obj result = blok_make_string(str);
+    result.tag = BLOK_TAG_SYMBOL;
+    return result;
 }
 
 blok_List * blok_list_from_obj(blok_Obj obj) {
@@ -95,7 +105,7 @@ blok_List * blok_list_from_obj(blok_Obj obj) {
     return (blok_List *) obj.ptr;
 }
 blok_String * blok_string_from_obj(blok_Obj obj) {
-    assert(obj.tag == BLOK_TAG_STRING);
+    assert(obj.tag == BLOK_TAG_STRING | obj.tag == BLOK_TAG_SYMBOL);
     obj.tag = 0;
     return (blok_String *) obj.ptr;
 }
@@ -117,17 +127,40 @@ void blok_print(blok_Obj obj) {
             blok_List * list = blok_list_from_obj(obj);
             printf("(");
             for(int i = 0; i < list->len; ++i) {
-                if(i != 0) printf(", ");
+                if(i != 0) printf(" ");
                 blok_print(list->items[i]);
             }
             printf(")");
             break;
         }
         case BLOK_TAG_STRING:
+            printf("\"%s\"", blok_string_from_obj(obj)->ptr);
+            break;
+        case BLOK_TAG_SYMBOL:
             printf("%s", blok_string_from_obj(obj)->ptr);
             break;
         default:
             printf("UNSUPPORTED TYPE");
+            break;
+    }
+}
+
+void blok_obj_free(const blok_Obj obj) {
+    switch(obj.tag) {
+        case BLOK_TAG_LIST:
+            {
+                blok_List * list = blok_list_from_obj(obj);
+                for(int i = 0; i < list->len; ++i) {
+                    blok_obj_free(list->items[i]);
+                }
+                free(list);
+            }
+            break;
+        case BLOK_TAG_STRING:
+        case BLOK_TAG_SYMBOL:
+            free(blok_string_from_obj(obj));
+            break;
+        default:
             break;
     }
 }
@@ -140,6 +173,49 @@ void blok_print_as_bytes(blok_Obj obj) {
     puts("");
 }
 
+
+/* READER */
+
+bool blok_reader_is_whitespace(char ch) {
+    return ch == ' ' || ch == '\n' || ch == '\t';
+}
+
+char blok_reader_peek(FILE * fp) {
+    char ch = fgetc(fp);
+    ungetc(ch, fp);
+    return ch;
+}
+
+void blok_reader_skip_whitespace(FILE * fp) {
+    while(blok_reader_is_whitespace(blok_reader_peek(fp))) getc(fp);
+}
+
+blok_Obj blok_reader_parse_int(FILE * fp) {
+    assert(isdigit(blok_reader_peek(fp)));
+    char buf[1024] = {0};
+    int i = 0;
+    while(isdigit(blok_reader_peek(fp))) buf[i++] = fgetc(fp);
+    char * end;
+    errno = 0;
+    const long num = strtol(buf, &end, 10);
+    if(errno != 0) {
+        fatal_error(fp, "Failed to parse integer");
+    }
+    return blok_make_int(num);
+}
+
+blok_Obj blok_reader_read(FILE * fp) {
+    blok_reader_skip_whitespace(fp);
+    const char ch = blok_reader_peek(fp);
+
+    if(isdigit(ch)) {
+        
+    }
+    return blok_make_nil();
+}
+
+
+
 int main(void) {
     blok_Obj c = blok_make_list(10);
     blok_List * l = blok_list_from_obj(c);
@@ -147,6 +223,7 @@ int main(void) {
     l->items[2] = blok_make_int(1234);
     l->items[8] = blok_make_string("hi there hello");
     blok_print(c);
+    blok_obj_free(c);
 
     return 0;
 }
