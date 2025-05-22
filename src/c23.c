@@ -90,6 +90,19 @@ blok_Obj blok_make_nil(void) {
     return (blok_Obj){0};
 }
 
+blok_Obj blok_hash(blok_Obj sym) {
+    
+}
+
+blok_Obj * blok_table_get(blok_Obj * table, blok_Obj key) {
+    
+}
+
+blok_Obj blok_table_set(blok_Obj * table, blok_Obj key, blok_Obj value) {
+    
+
+}
+
 
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
@@ -103,12 +116,12 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
-    const int32_t size = sizeof(blok_String) + 2*len + 1;
-    blok_String * blok_str = malloc(size);
+    blok_String * blok_str = malloc(sizeof(blok_String));
     assert(((uintptr_t)blok_str & 0b1111) == 0);
+
     blok_str->len = len;
-    blok_str->cap = 2*len;
-    memcpy(blok_str->ptr, str, len + 1);
+    blok_str->cap = len + 1;
+    blok_str->ptr = strdup(str);
 
     blok_Obj result = {.ptr = blok_str};
     result.tag = BLOK_TAG_STRING;
@@ -136,6 +149,12 @@ blok_String * blok_string_from_obj(blok_Obj obj) {
     return (blok_String *) obj.ptr;
 }
 
+blok_Symbol * blok_symbol_from_obj(blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_SYMBOL);
+    obj.tag = 0;
+    return (blok_Symbol *) obj.ptr;
+}
+
 void blok_list_append(blok_Obj * list, blok_Obj item) {
     blok_List * l = blok_list_from_obj(*list);
     if(l->len + 1 >= l->cap) {
@@ -149,20 +168,14 @@ void blok_list_append(blok_Obj * list, blok_Obj item) {
     list->tag = BLOK_TAG_LIST;
 }
 
-void blok_string_append(blok_Obj * str, char ch) {
-    char tag = str->tag;
-    blok_String * l = blok_string_from_obj(*str);
+void blok_string_append(blok_Obj str, char ch) {
+    blok_String * l = blok_string_from_obj(str);
     if(l->len + 2 >= l->cap) {
-        l->cap = l->cap * 2 + 2;
-        l = realloc(l, sizeof(blok_String) + l->cap * sizeof(char));
-        /*printf("string realloc: %d\n", l->cap);*/
-        /*fflush(stdout);*/
+        l->cap = (l->cap + 2) * 2;
+        l->ptr = realloc(l->ptr, l->cap);
     }
     l->ptr[l->len++] = ch;
     l->ptr[l->len] = 0;
-
-    str->ptr = l;
-    str->tag = tag;
 }
 
 void blok_print(blok_Obj obj) {
@@ -192,7 +205,7 @@ void blok_print(blok_Obj obj) {
             printf("\"%s\"", blok_string_from_obj(obj)->ptr);
             break;
         case BLOK_TAG_SYMBOL:
-            printf("%s", blok_string_from_obj(obj)->ptr);
+            printf("%s", blok_symbol_from_obj(obj)->buf);
             break;
         default:
             printf("UNSUPPORTED TYPE");
@@ -212,7 +225,7 @@ void blok_obj_free(const blok_Obj obj) {
             }
             break;
         case BLOK_TAG_STRING:
-        case BLOK_TAG_SYMBOL:
+            free(blok_string_from_obj(obj)->ptr);
             free(blok_string_from_obj(obj));
             break;
         default:
@@ -281,7 +294,7 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
                     fgetc(fp);
                     return str;
                 } else {
-                    blok_string_append(&str, fgetc(fp));
+                    blok_string_append(str, fgetc(fp));
                 }
                 break;
             case BLOK_READER_STATE_ESCAPE:
@@ -290,13 +303,13 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
                 char escape = fgetc(fp);
                 switch(escape) {
                     case 'n':
-                        blok_string_append(&str, '\n');
+                        blok_string_append(str, '\n');
                         break;
                     case '"':
-                        blok_string_append(&str, '"');
+                        blok_string_append(str, '"');
                         break;
                     case '\'':
-                        blok_string_append(&str, '\'');
+                        blok_string_append(str, '\'');
                         break;
                     default:
                         fatal_error(fp, "Unknown string escape: \"\\%c\"", escape);
@@ -314,16 +327,19 @@ bool blok_is_symbol_char(char ch) {
 }
 
 blok_Obj blok_reader_parse_symbol(FILE * fp) {
-    blok_Obj sym = blok_make_symbol("");
     assert(isalpha(blok_reader_peek(fp)));
+    blok_Symbol sym = {0};
+    uint32_t i = 0;
     char ch = fgetc(fp);
-    blok_string_append(&sym, ch);
-
+    sym.buf[i++] = ch;
     while(blok_is_symbol_char(blok_reader_peek(fp))) {
-        blok_string_append(&sym, fgetc(fp));
+        sym.buf[i++] = fgetc(fp);
+        if(i + 2 > sizeof(sym.buf)) {
+            fatal_error(fp, "symbol too long, %s\n", sym.buf);
+        }
     }
     
-    return sym;
+    return blok_make_symbol(sym.buf);
 }
 
 blok_Obj blok_reader_read(FILE *);
