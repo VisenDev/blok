@@ -36,6 +36,7 @@ typedef enum {
     BLOK_TAG_STRING,
     BLOK_TAG_KEYVALUE,
     BLOK_TAG_SYMBOL,
+    BLOK_TAG_TABLE,
 } blok_Tag;
 
 typedef union {
@@ -179,29 +180,51 @@ int32_t blok_hash(blok_Symbol sym, int32_t modulus) {
     return hash % modulus;
 }
 
+blok_Obj blok_make_table(int32_t size) {
+    blok_Table * table = malloc(sizeof(blok_Table));
+    table->items = malloc(sizeof(blok_KeyValue) * size);
+    table->count = 0;
+    table->cap = size;
+    blok_Obj result = {0};
+    result.ptr = table;
+    result.tag = BLOK_TAG_TABLE;
+    return result;
+}
+
 blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
     int32_t i = 2 * blok_hash(key, table->cap / 2);
     assert(i >= 0);
     assert(i < table->cap);
+    const int start = i;
+
+    while(table->items[i].key.buf[0] != 0){
+        ++i;
+        if(i + 1 >= table->cap) {
+            i = 0;
+        } else if (i == start) {
+            fatal_error(NULL, "Hash table ran out of capacity"); 
+        }
+    }
     return &table->items[i];
 }
 
 blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
-    int32_t i = 2 * blok_hash(key, table->cap / 2);
-    if(table->items[i].key.buf[0] == 0) {
-        table->items[i].key = key;
-        table->items[i].value = value;
-    } else {
-        while(table->items[i].key.buf[0] != 0){
-            ++i;
-            if(i + 1 >= table->cap) {
-                i = 0;
-            }
-        }
-    }
-
+    blok_KeyValue * dest = blok_table_get(table, key);
+    dest->key = key;
+    blok_Obj old = dest->value;
+    dest->value = value;
+    return old;
 }
 
+blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
+    blok_KeyValue * dest = blok_table_get(table, key);
+    if(dest->key.buf[0] == 0) {
+        return blok_make_nil();
+    } else {
+        dest->key.buf[0] = 0;
+        return dest->value;
+    }
+}
 
 void blok_print(blok_Obj obj) {
     switch(obj.tag) {
@@ -216,16 +239,16 @@ void blok_print(blok_Obj obj) {
             printf("<Primitive %p>", obj.ptr);
             break;
         case BLOK_TAG_LIST:
-        {
-            blok_List * list = blok_list_from_obj(obj);
-            printf("(");
-            for(int i = 0; i < list->len; ++i) {
-                if(i != 0) printf(" ");
-                blok_print(list->items[i]);
+            {
+                blok_List * list = blok_list_from_obj(obj);
+                printf("(");
+                for(int i = 0; i < list->len; ++i) {
+                    if(i != 0) printf(" ");
+                    blok_print(list->items[i]);
+                }
+                printf(")");
+                break;
             }
-            printf(")");
-            break;
-        }
         case BLOK_TAG_STRING:
             printf("\"%s\"", blok_string_from_obj(obj)->ptr);
             break;
@@ -252,6 +275,9 @@ void blok_obj_free(const blok_Obj obj) {
         case BLOK_TAG_STRING:
             free(blok_string_from_obj(obj)->ptr);
             free(blok_string_from_obj(obj));
+            break;
+        case BLOK_TAG_SYMBOL:
+            free(blok_symbol_from_obj(obj));
             break;
         default:
             break;
@@ -363,7 +389,7 @@ blok_Obj blok_reader_parse_symbol(FILE * fp) {
             fatal_error(fp, "symbol too long, %s\n", sym.buf);
         }
     }
-    
+
     return blok_make_symbol(sym.buf);
 }
 
@@ -378,8 +404,8 @@ blok_Obj blok_reader_read_obj(FILE * fp) {
         fgetc(fp);
         blok_Obj result = blok_reader_read(fp);
         if (blok_reader_peek(fp) != ')')
-          fatal_error(fp, "Expected close parenthesis, found %c",
-                      blok_reader_peek(fp));
+            fatal_error(fp, "Expected close parenthesis, found %c",
+                    blok_reader_peek(fp));
         fgetc(fp);
         return result;
     } else if(ch == '"') {
@@ -402,19 +428,12 @@ blok_Obj blok_reader_read(FILE * fp) {
     return result;
 }
 
-typedef struct {
-    blok_String name;
-    blok_Obj value;
-} blok_Variable;
-
 blok_Obj blok_evaluator_eval(blok_Obj obj) {
     switch(obj.tag) {
         case BLOK_TAG_NIL:
         case BLOK_TAG_INT:
         case BLOK_TAG_STRING:
             return obj;
-
-
 
     }
 
@@ -424,19 +443,20 @@ blok_Obj blok_evaluator_eval(blok_Obj obj) {
 
 int main(void) {
     FILE * fp = fopen("c23-test.lisp", "r");
-    blok_print(blok_reader_read(fp));
-
+    blok_Obj source = blok_reader_read(fp);
+    blok_print(source);
+    blok_obj_free(source);
     fclose(fp);
     return 0;
 }
 
 
-    /*
-    blok_Obj c = blok_make_list(10);
-    blok_List * l = blok_list_from_obj(c);
-    l->len = 10;
-    l->items[2] = blok_make_int(1234);
-    l->items[8] = blok_make_string("hi there hello");
-    blok_print(c);
-    blok_obj_free(c);
-    */
+/*
+   blok_Obj c = blok_make_list(10);
+   blok_List * l = blok_list_from_obj(c);
+   l->len = 10;
+   l->items[2] = blok_make_int(1234);
+   l->items[8] = blok_make_string("hi there hello");
+   blok_print(c);
+   blok_obj_free(c);
+   */
