@@ -143,8 +143,66 @@ blok_Symbol * blok_symbol_from_obj(blok_Obj obj) {
     return (blok_Symbol *) obj.ptr;
 }
 
-bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
+blok_KeyValue * blok_keyvalue_from_obj(blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_KEYVALUE);
+    obj.tag = 0;
+    return (blok_KeyValue *) obj.ptr;
+}
 
+blok_Table * blok_table_from_obj(blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_TABLE);
+    obj.tag = 0;
+    return (blok_Table *) obj.ptr;
+}
+
+bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
+    if(lhs->len != rhs->len) {
+        return false;
+    } else {
+        return strncmp(lhs->ptr, rhs->ptr, lhs->len);
+    }
+}
+
+bool blok_symbol_equal(blok_Symbol * const lhs, blok_Symbol * rhs) {
+    return strncmp(lhs->buf, rhs->buf, sizeof(lhs->buf));
+}
+
+bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
+    if(lhs.tag != rhs.tag) {
+        return false;
+    } else {
+        switch(lhs.tag) {
+            case BLOK_TAG_INT:
+                return lhs.data == rhs.data;
+            case BLOK_TAG_NIL:
+                return true;
+            case BLOK_TAG_STRING:
+                return blok_string_equal(blok_string_from_obj(lhs),
+                        blok_string_from_obj(rhs));
+            case BLOK_TAG_SYMBOL:
+                return blok_symbol_equal(blok_symbol_from_obj(lhs),
+                        blok_symbol_from_obj(rhs));
+            case BLOK_TAG_KEYVALUE:
+                //TODO
+                fatal_error(NULL, "Comparison for this tag not implemented yet");
+                break;
+            case BLOK_TAG_TABLE:
+                //TODO
+                fatal_error(NULL, "Comparison for this tag not implemented yet");
+                break;
+            case BLOK_TAG_LIST:
+                //TODO
+                fatal_error(NULL, "Comparison for this tag not implemented yet");
+                break;
+            case BLOK_TAG_PRIMITIVE:
+                //TODO
+                fatal_error(NULL, "Primitive comparison not implemented");
+                return false;
+            default: 
+                fatal_error(NULL, "Comparison for this tag not implemented yet");
+                return false;
+        }
+    }
 }
 
 void blok_list_append(blok_Obj * list, blok_Obj item) {
@@ -196,7 +254,7 @@ blok_Obj blok_make_table(int32_t size) {
 }
 
 blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
-    int32_t i = 2 * blok_hash(key, table->cap / 2);
+    int32_t i = blok_hash(key, table->cap);
     assert(i >= 0);
     assert(i < table->cap);
     const int start = i;
@@ -210,6 +268,10 @@ blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
         }
     }
     return &table->items[i];
+}
+
+blok_Obj blok_table_rehash(blok_Table * table, int32_t new_size) {
+
 }
 
 blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
