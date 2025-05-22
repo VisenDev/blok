@@ -90,19 +90,6 @@ blok_Obj blok_make_nil(void) {
     return (blok_Obj){0};
 }
 
-blok_Obj blok_hash(blok_Obj sym) {
-    
-}
-
-blok_Obj * blok_table_get(blok_Obj * table, blok_Obj key) {
-    
-}
-
-blok_Obj blok_table_set(blok_Obj * table, blok_Obj key, blok_Obj value) {
-    
-
-}
-
 
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
@@ -177,6 +164,44 @@ void blok_string_append(blok_Obj str, char ch) {
     l->ptr[l->len++] = ch;
     l->ptr[l->len] = 0;
 }
+
+
+int32_t blok_hash(blok_Symbol sym, int32_t modulus) {
+    /* Inspired by djbt2 by Dan Bernstein - http://www.cse.yorku.ca/~oz/hash.html */
+    int32_t hash = 5381;
+    int32_t i = 0;
+
+    for(i = 0; i < (int32_t)strlen(sym.buf); ++i) {
+        const unsigned char c = (unsigned char)sym.buf[i];
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash % modulus;
+}
+
+blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
+    int32_t i = 2 * blok_hash(key, table->cap / 2);
+    assert(i >= 0);
+    assert(i < table->cap);
+    return &table->items[i];
+}
+
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
+    int32_t i = 2 * blok_hash(key, table->cap / 2);
+    if(table->items[i].key.buf[0] == 0) {
+        table->items[i].key = key;
+        table->items[i].value = value;
+    } else {
+        while(table->items[i].key.buf[0] != 0){
+            ++i;
+            if(i + 1 >= table->cap) {
+                i = 0;
+            }
+        }
+    }
+
+}
+
 
 void blok_print(blok_Obj obj) {
     switch(obj.tag) {
