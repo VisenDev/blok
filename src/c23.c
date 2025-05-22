@@ -143,6 +143,10 @@ blok_Symbol * blok_symbol_from_obj(blok_Obj obj) {
     return (blok_Symbol *) obj.ptr;
 }
 
+bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
+
+}
+
 void blok_list_append(blok_Obj * list, blok_Obj item) {
     blok_List * l = blok_list_from_obj(*list);
     if(l->len + 1 >= l->cap) {
@@ -426,6 +430,10 @@ blok_Obj blok_reader_read(FILE * fp) {
         blok_reader_skip_whitespace(fp);
     }
     return result;
+}
+
+blok_Obj blok_evaulator_apply(blok_Symbol sym, int32_t argc, blok_Obj * argv) {
+    
 }
 
 blok_Obj blok_evaluator_eval(blok_Obj obj) {
