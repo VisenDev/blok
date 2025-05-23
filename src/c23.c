@@ -67,13 +67,14 @@ typedef struct {
 } blok_Symbol;
 
 typedef struct {
-    blok_Symbol key;
+    blok_Obj key;
     blok_Obj value;
 } blok_KeyValue;
 
 typedef struct {
-    int count;
-    int cap;
+    int32_t count;
+    int32_t cap;
+    int32_t iterate_i;
     blok_KeyValue * items;
 } blok_Table;
 
@@ -167,6 +168,7 @@ bool blok_symbol_equal(blok_Symbol * const lhs, blok_Symbol * rhs) {
     return strncmp(lhs->buf, rhs->buf, sizeof(lhs->buf));
 }
 
+
 bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
     if(lhs.tag != rhs.tag) {
         return false;
@@ -185,15 +187,15 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
             case BLOK_TAG_KEYVALUE:
                 //TODO
                 fatal_error(NULL, "Comparison for this tag not implemented yet");
-                break;
+                return false;
             case BLOK_TAG_TABLE:
                 //TODO
                 fatal_error(NULL, "Comparison for this tag not implemented yet");
-                break;
+                return false;
             case BLOK_TAG_LIST:
                 //TODO
                 fatal_error(NULL, "Comparison for this tag not implemented yet");
-                break;
+                return false;
             case BLOK_TAG_PRIMITIVE:
                 //TODO
                 fatal_error(NULL, "Primitive comparison not implemented");
@@ -204,6 +206,12 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
         }
     }
 }
+
+bool blok_nil_equal(blok_Obj obj) {
+    return obj.tag == BLOK_TAG_NIL;
+}
+
+void blok_obj_free(blok_Obj obj);
 
 void blok_list_append(blok_Obj * list, blok_Obj item) {
     blok_List * l = blok_list_from_obj(*list);
@@ -228,71 +236,176 @@ void blok_string_append(blok_Obj str, char ch) {
     l->ptr[l->len] = 0;
 }
 
-
-int32_t blok_hash(blok_Symbol sym, int32_t modulus) {
+int32_t blok_hash_char_ptr(char * const ptr, int32_t len) {
     /* Inspired by djbt2 by Dan Bernstein - http://www.cse.yorku.ca/~oz/hash.html */
     int32_t hash = 5381;
     int32_t i = 0;
 
-    for(i = 0; i < (int32_t)strlen(sym.buf); ++i) {
-        const unsigned char c = (unsigned char)sym.buf[i];
+    for(i = 0; i < len; ++i) {
+        const unsigned char c = (unsigned char)ptr[i];
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
     }
 
-    return hash % modulus;
+    return hash;
 }
 
+
+int32_t blok_hash(blok_Obj obj) {
+
+    if(obj.tag == BLOK_TAG_INT) {
+        return obj.data;
+    } else if (obj.tag == BLOK_TAG_SYMBOL) {
+        return blok_hash_char_ptr(blok_symbol_from_obj(obj)->buf, BLOK_SYMBOL_MAX_LEN);
+    } else if (obj.tag == BLOK_TAG_STRING) {
+        blok_String * str = blok_string_from_obj(obj);
+        return blok_hash_char_ptr(str->ptr, str->len);
+    } else {
+        fatal_error(NULL, "Hashing not implemented for that data type yet");
+        return -1;
+    }
+
+}
+
+blok_Table blok_table_init_capacity(int32_t cap) {
+    blok_Table table = {0};
+    table.items = malloc(sizeof(blok_KeyValue) * cap);
+    table.count = 0;
+    table.iterate_i = -1;
+    table.cap = cap;
+    return table;
+}
+
+
 blok_Obj blok_make_table(int32_t size) {
-    blok_Table * table = malloc(sizeof(blok_Table));
-    table->items = malloc(sizeof(blok_KeyValue) * size);
-    table->count = 0;
-    table->cap = size;
     blok_Obj result = {0};
-    result.ptr = table;
+    blok_Table * ptr = malloc(sizeof(blok_Table));
+    *ptr = blok_table_init_capacity(size);
+    result.ptr = ptr;
     result.tag = BLOK_TAG_TABLE;
     return result;
 }
 
-blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
-    int32_t i = blok_hash(key, table->cap);
+
+blok_KeyValue * blok_table_iterate_next(blok_Table * table) {
+    assert(table->iterate_i >= 0);
+    for(;table->iterate_i < table->cap; ++table->iterate_i) {
+        if(!blok_nil_equal(table->items[table->iterate_i].key)) {
+            return &table->items[table->iterate_i++];
+        }
+    }
+    return NULL;
+}
+
+void blok_table_iterate_start(blok_Table * table) {
+    table->iterate_i = 0;
+}
+
+blok_KeyValue * blok_table_get(blok_Table * table, blok_Obj key) {
+    int32_t i = blok_hash(key) % (table->cap - 1);
     assert(i >= 0);
     assert(i < table->cap);
     const int start = i;
 
-    while(table->items[i].key.buf[0] != 0){
-        ++i;
-        if(i + 1 >= table->cap) {
-            i = 0;
-        } else if (i == start) {
-            fatal_error(NULL, "Hash table ran out of capacity"); 
-        }
+    while (!blok_obj_equal(table->items[i].key, key) &&
+           !blok_obj_equal(table->items[i].key, blok_make_nil())) {
+      ++i;
+      if (i + 1 >= table->cap) {
+          i = 0;
+      } else if (i == start) {
+          fatal_error(NULL, "Hash table overfilled");
+      }
     }
     return &table->items[i];
 }
 
-blok_Obj blok_table_rehash(blok_Table * table, int32_t new_size) {
-
+blok_Obj blok_table_set(blok_Table * table, blok_Obj key, blok_Obj value);
+void blok_table_rehash(blok_Table * table, int32_t new_cap) {
+    if(new_cap < table->count) {
+        fatal_error(NULL, "new table capacity is smaller than the older one");
+    }
+    blok_Table new = blok_table_init_capacity(new_cap);
+    for(int i = 0; i < table->cap; ++i) {
+        blok_KeyValue item = table->items[i];
+        if(!blok_nil_equal(item.key)) {
+            blok_table_set(&new, item.key, item.value);
+        }
+    }
+    free(table->items);
+    *table = new;
 }
 
-blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
+blok_Obj blok_table_set(blok_Table * table, blok_Obj key, blok_Obj value) {
+    if(table->cap == 0) {
+        *table = blok_table_init_capacity(8);
+    } else if(table->count + 1 > table->cap / 3) {
+        blok_table_rehash(table, table->cap * 3);
+    }
     blok_KeyValue * dest = blok_table_get(table, key);
+    if(blok_nil_equal(dest->key)) {
+        ++table->count;
+    }
+    blok_obj_free(dest->key);
     dest->key = key;
     blok_Obj old = dest->value;
     dest->value = value;
     return old;
 }
 
-blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
+blok_Obj blok_table_unset(blok_Table * table, blok_Obj key) {
     blok_KeyValue * dest = blok_table_get(table, key);
-    if(dest->key.buf[0] == 0) {
+    if(dest->key.tag == BLOK_TAG_NIL) {
         return blok_make_nil();
     } else {
-        dest->key.buf[0] = 0;
+        blok_obj_free(dest->key);
+        dest->key = blok_make_nil();
+        --table->count;
         return dest->value;
     }
 }
 
-void blok_print(blok_Obj obj) {
+void blok_table_empty(blok_Table * table) {
+    blok_table_iterate_start(table);
+    blok_KeyValue * pair = NULL;
+    while((pair = blok_table_iterate_next(table)) != NULL) {
+        blok_obj_free(pair->key);
+        blok_obj_free(pair->value);
+    }
+    free(table->items);
+    memset(table, 0, sizeof(blok_Table));
+}
+
+
+void blok_obj_free(blok_Obj obj) {
+    switch(obj.tag) {
+        case BLOK_TAG_LIST:
+            {
+                blok_List * list = blok_list_from_obj(obj);
+                for(int i = 0; i < list->len; ++i) {
+                    blok_obj_free(list->items[i]);
+                }
+                free(list);
+            }
+            break;
+        case BLOK_TAG_TABLE:
+            {
+                blok_Table * table = blok_table_from_obj(obj);
+                blok_table_empty(table);
+                free(table);
+            }
+            break;
+        case BLOK_TAG_STRING:
+            free(blok_string_from_obj(obj)->ptr);
+            free(blok_string_from_obj(obj));
+            break;
+        case BLOK_TAG_SYMBOL:
+            free(blok_symbol_from_obj(obj));
+            break;
+        default:
+            break;
+    }
+}
+
+void blok_obj_print(blok_Obj obj) {
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
             printf("nil");
@@ -310,7 +423,7 @@ void blok_print(blok_Obj obj) {
                 printf("(");
                 for(int i = 0; i < list->len; ++i) {
                     if(i != 0) printf(" ");
-                    blok_print(list->items[i]);
+                    blok_obj_print(list->items[i]);
                 }
                 printf(")");
                 break;
@@ -327,28 +440,6 @@ void blok_print(blok_Obj obj) {
     }
 }
 
-void blok_obj_free(const blok_Obj obj) {
-    switch(obj.tag) {
-        case BLOK_TAG_LIST:
-            {
-                blok_List * list = blok_list_from_obj(obj);
-                for(int i = 0; i < list->len; ++i) {
-                    blok_obj_free(list->items[i]);
-                }
-                free(list);
-            }
-            break;
-        case BLOK_TAG_STRING:
-            free(blok_string_from_obj(obj)->ptr);
-            free(blok_string_from_obj(obj));
-            break;
-        case BLOK_TAG_SYMBOL:
-            free(blok_symbol_from_obj(obj));
-            break;
-        default:
-            break;
-    }
-}
 
 void blok_print_as_bytes(blok_Obj obj) {
     uint8_t *bytes = (uint8_t*)&obj;
@@ -494,16 +585,48 @@ blok_Obj blok_reader_read(FILE * fp) {
     return result;
 }
 
-blok_Obj blok_evaulator_apply(blok_Symbol sym, int32_t argc, blok_Obj * argv) {
-    
+
+#define MAX_SCOPE_DEPTH 64
+typedef struct { 
+    int32_t scope_depth;
+    blok_Table symbols[MAX_SCOPE_DEPTH];
+} blok_State; 
+
+typedef enum {
+    BLOK_PRIMITIVE_PRINT,
+} blok_Primitive;
+
+blok_State blok_state_init(void) {
+    blok_State env = {0};
+    blok_table_set(&env.symbols[0], blok_make_symbol("print"), blok_make_int(BLOK_PRIMITIVE_PRINT));
+    return env;
 }
 
-blok_Obj blok_evaluator_eval(blok_Obj obj) {
+
+void blok_state_deinit(blok_State * env) {
+    for(int32_t i = 0; i < MAX_SCOPE_DEPTH; ++i) {
+        blok_table_empty(&env->symbols[i]);
+    }
+}
+
+blok_Obj * blok_state_lookup_symbol(blok_State * env, blok_Symbol sym) {
+    for(int32_t i = 0; i < env->scope_depth; ++i) {
+        
+    }
+}
+
+
+blok_Obj blok_evaluator_apply(blok_State * env, blok_Symbol sym, int32_t argc, blok_Obj * argv) {
+
+}
+
+blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
     switch(obj.tag) {
         case BLOK_TAG_NIL:
         case BLOK_TAG_INT:
         case BLOK_TAG_STRING:
             return obj;
+        case BLOK_TAG_SYMBOL:
 
     }
 
@@ -514,7 +637,7 @@ blok_Obj blok_evaluator_eval(blok_Obj obj) {
 int main(void) {
     FILE * fp = fopen("c23-test.lisp", "r");
     blok_Obj source = blok_reader_read(fp);
-    blok_print(source);
+    blok_obj_print(source);
     blok_obj_free(source);
     fclose(fp);
     return 0;
