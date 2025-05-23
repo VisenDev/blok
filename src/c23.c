@@ -78,6 +78,15 @@ typedef struct {
     blok_KeyValue * items;
 } blok_Table;
 
+#define BLOK_FUNCTION_MAX_PARAMS 8
+typedef struct {
+    //key: name, value: type
+    blok_KeyValue params[BLOK_FUNCTION_MAX_PARAMS];
+    int32_t param_count;
+    blok_List body;
+    //TODO figure out return types
+} blok_Function;
+
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
 _Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
