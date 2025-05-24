@@ -84,8 +84,18 @@ typedef struct {
     blok_KeyValue params[BLOK_FUNCTION_MAX_PARAMS];
     int32_t param_count;
     blok_List body;
+    blok_Table static_variables;
     //TODO figure out return types
 } blok_Function;
+
+
+typedef struct { 
+    blok_Table globals;
+} blok_State; 
+
+typedef enum {
+    BLOK_PRIMITIVE_PRINT,
+} blok_Primitive;
 
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
 _Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
@@ -595,15 +605,6 @@ blok_Obj blok_reader_read(FILE * fp) {
 }
 
 
-#define MAX_SCOPE_DEPTH 64
-typedef struct { 
-    int32_t scope_depth;
-    blok_Table symbols[MAX_SCOPE_DEPTH];
-} blok_State; 
-
-typedef enum {
-    BLOK_PRIMITIVE_PRINT,
-} blok_Primitive;
 
 blok_State blok_state_init(void) {
     blok_State env = {0};
