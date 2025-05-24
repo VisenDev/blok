@@ -52,7 +52,7 @@ typedef union {
 typedef struct { 
     int32_t len;
     int32_t cap;
-    blok_Obj items[];
+    blok_Obj * items;
 } blok_List;
 
 typedef struct {
@@ -67,7 +67,7 @@ typedef struct {
 } blok_Symbol;
 
 typedef struct {
-    blok_Obj key;
+    blok_Symbol key;
     blok_Obj value;
 } blok_KeyValue;
 
