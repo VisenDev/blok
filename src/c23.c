@@ -37,6 +37,7 @@ typedef enum {
     BLOK_TAG_KEYVALUE,
     BLOK_TAG_SYMBOL,
     BLOK_TAG_TABLE,
+    BLOK_TAG_FUNCTION,
 } blok_Tag;
 
 typedef union {
@@ -52,7 +53,7 @@ typedef union {
 typedef struct { 
     int32_t len;
     int32_t cap;
-    blok_Obj * items;
+    blok_Obj items[];
 } blok_List;
 
 typedef struct {
@@ -83,7 +84,7 @@ typedef struct {
     //key: name, value: type
     blok_KeyValue params[BLOK_FUNCTION_MAX_PARAMS];
     int32_t param_count;
-    blok_List body;
+    blok_Obj body;
     blok_Table static_variables;
     //TODO figure out return types
 } blok_Function;
@@ -104,6 +105,24 @@ _Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(void(*)(void)) >= 8, "Alignment of function pointers is too small");
 _Static_assert(sizeof(void*) == 8, "Expected pointers to be 8 bytes");
 
+blok_Obj blok_obj_allocate(char tag, int32_t bytes) {
+    char * mem = malloc(bytes);
+    memset(mem, 0, bytes);
+    blok_Obj result = {0};
+    result.ptr = mem;
+    result.tag = tag;
+    return result;
+}
+
+void * blok_obj_extract_ptr(blok_Obj obj) {
+    if(obj.tag == BLOK_TAG_INT || BLOK_TAG_NIL) {
+      fatal_error(NULL, "You tried to get the pointer out of a type that does not "
+                  "contain a ptr");
+    }
+    obj.tag = 0;
+    return obj.ptr;
+}
+
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .data = data};
 }
@@ -120,7 +139,6 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
     result.tag = BLOK_TAG_LIST;
     return result;
 }
-
 
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
@@ -163,6 +181,7 @@ blok_Symbol * blok_symbol_from_obj(blok_Obj obj) {
     return (blok_Symbol *) obj.ptr;
 }
 
+
 blok_KeyValue * blok_keyvalue_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_KEYVALUE);
     obj.tag = 0;
@@ -183,8 +202,8 @@ bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
     }
 }
 
-bool blok_symbol_equal(blok_Symbol * const lhs, blok_Symbol * rhs) {
-    return strncmp(lhs->buf, rhs->buf, sizeof(lhs->buf));
+bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
+    return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf));
 }
 
 
@@ -201,8 +220,8 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
                 return blok_string_equal(blok_string_from_obj(lhs),
                         blok_string_from_obj(rhs));
             case BLOK_TAG_SYMBOL:
-                return blok_symbol_equal(blok_symbol_from_obj(lhs),
-                        blok_symbol_from_obj(rhs));
+                return blok_symbol_equal(*blok_symbol_from_obj(lhs),
+                        *blok_symbol_from_obj(rhs));
             case BLOK_TAG_KEYVALUE:
                 //TODO
                 fatal_error(NULL, "Comparison for this tag not implemented yet");
@@ -228,6 +247,10 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
 
 bool blok_nil_equal(blok_Obj obj) {
     return obj.tag == BLOK_TAG_NIL;
+}
+
+bool blok_symbol_empty(blok_Symbol sym) {
+    return sym.buf[0] == 0;
 }
 
 void blok_obj_free(blok_Obj obj);
@@ -269,20 +292,8 @@ int32_t blok_hash_char_ptr(char * const ptr, int32_t len) {
 }
 
 
-int32_t blok_hash(blok_Obj obj) {
-
-    if(obj.tag == BLOK_TAG_INT) {
-        return obj.data;
-    } else if (obj.tag == BLOK_TAG_SYMBOL) {
-        return blok_hash_char_ptr(blok_symbol_from_obj(obj)->buf, BLOK_SYMBOL_MAX_LEN);
-    } else if (obj.tag == BLOK_TAG_STRING) {
-        blok_String * str = blok_string_from_obj(obj);
-        return blok_hash_char_ptr(str->ptr, str->len);
-    } else {
-        fatal_error(NULL, "Hashing not implemented for that data type yet");
-        return -1;
-    }
-
+int32_t blok_hash(blok_Symbol sym) {
+    return blok_hash_char_ptr(sym.buf, BLOK_SYMBOL_MAX_LEN);
 }
 
 blok_Table blok_table_init_capacity(int32_t cap) {
@@ -304,11 +315,10 @@ blok_Obj blok_make_table(int32_t size) {
     return result;
 }
 
-
 blok_KeyValue * blok_table_iterate_next(blok_Table * table) {
     assert(table->iterate_i >= 0);
     for(;table->iterate_i < table->cap; ++table->iterate_i) {
-        if(!blok_nil_equal(table->items[table->iterate_i].key)) {
+        if(!blok_symbol_empty(table->items[table->iterate_i].key)) {
             return &table->items[table->iterate_i++];
         }
     }
@@ -319,14 +329,14 @@ void blok_table_iterate_start(blok_Table * table) {
     table->iterate_i = 0;
 }
 
-blok_KeyValue * blok_table_get(blok_Table * table, blok_Obj key) {
+blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
     int32_t i = blok_hash(key) % (table->cap - 1);
     assert(i >= 0);
     assert(i < table->cap);
     const int start = i;
 
-    while (!blok_obj_equal(table->items[i].key, key) &&
-           !blok_obj_equal(table->items[i].key, blok_make_nil())) {
+    while (!blok_symbol_equal(table->items[i].key, key) &&
+           !blok_symbol_empty(table->items[i].key)) {
       ++i;
       if (i + 1 >= table->cap) {
           i = 0;
@@ -337,7 +347,7 @@ blok_KeyValue * blok_table_get(blok_Table * table, blok_Obj key) {
     return &table->items[i];
 }
 
-blok_Obj blok_table_set(blok_Table * table, blok_Obj key, blok_Obj value);
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
 void blok_table_rehash(blok_Table * table, int32_t new_cap) {
     if(new_cap < table->count) {
         fatal_error(NULL, "new table capacity is smaller than the older one");
@@ -345,7 +355,7 @@ void blok_table_rehash(blok_Table * table, int32_t new_cap) {
     blok_Table new = blok_table_init_capacity(new_cap);
     for(int i = 0; i < table->cap; ++i) {
         blok_KeyValue item = table->items[i];
-        if(!blok_nil_equal(item.key)) {
+        if(!blok_symbol_empty(item.key)) {
             blok_table_set(&new, item.key, item.value);
         }
     }
@@ -353,30 +363,28 @@ void blok_table_rehash(blok_Table * table, int32_t new_cap) {
     *table = new;
 }
 
-blok_Obj blok_table_set(blok_Table * table, blok_Obj key, blok_Obj value) {
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
     if(table->cap == 0) {
         *table = blok_table_init_capacity(8);
     } else if(table->count + 1 > table->cap / 3) {
         blok_table_rehash(table, table->cap * 3);
     }
     blok_KeyValue * dest = blok_table_get(table, key);
-    if(blok_nil_equal(dest->key)) {
+    if(blok_symbol_empty(dest->key)) {
         ++table->count;
     }
-    blok_obj_free(dest->key);
     dest->key = key;
     blok_Obj old = dest->value;
     dest->value = value;
     return old;
 }
 
-blok_Obj blok_table_unset(blok_Table * table, blok_Obj key) {
+blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
     blok_KeyValue * dest = blok_table_get(table, key);
-    if(dest->key.tag == BLOK_TAG_NIL) {
+    if(blok_symbol_empty(dest->key)) {
         return blok_make_nil();
     } else {
-        blok_obj_free(dest->key);
-        dest->key = blok_make_nil();
+        dest->key = (blok_Symbol){0};
         --table->count;
         return dest->value;
     }
@@ -386,13 +394,11 @@ void blok_table_empty(blok_Table * table) {
     blok_table_iterate_start(table);
     blok_KeyValue * pair = NULL;
     while((pair = blok_table_iterate_next(table)) != NULL) {
-        blok_obj_free(pair->key);
         blok_obj_free(pair->value);
     }
     free(table->items);
     memset(table, 0, sizeof(blok_Table));
 }
-
 
 void blok_obj_free(blok_Obj obj) {
     switch(obj.tag) {
@@ -419,7 +425,15 @@ void blok_obj_free(blok_Obj obj) {
         case BLOK_TAG_SYMBOL:
             free(blok_symbol_from_obj(obj));
             break;
+        case BLOK_TAG_KEYVALUE:
+            blok_obj_free(blok_keyvalue_from_obj(obj)->value);
+            free(blok_keyvalue_from_obj(obj));
+        case BLOK_TAG_INT:
+        case BLOK_TAG_NIL:
+            /*No freeing needed for ints or nil*/
+            break;
         default:
+            fatal_error(NULL, "Tag cannot be freed");
             break;
     }
 }
@@ -445,13 +459,20 @@ void blok_obj_print(blok_Obj obj) {
                     blok_obj_print(list->items[i]);
                 }
                 printf(")");
-                break;
             }
+            break;
         case BLOK_TAG_STRING:
             printf("\"%s\"", blok_string_from_obj(obj)->ptr);
             break;
         case BLOK_TAG_SYMBOL:
             printf("%s", blok_symbol_from_obj(obj)->buf);
+            break;
+        case BLOK_TAG_KEYVALUE:
+            {
+                blok_KeyValue * kv =  blok_keyvalue_from_obj(obj);
+                printf("%s:", kv->key.buf);
+                blok_obj_print(kv->value);
+            }
             break;
         default:
             printf("UNSUPPORTED TYPE");
@@ -553,7 +574,10 @@ bool blok_is_symbol_char(char ch) {
     return ch == '_' || isalpha(ch) || isdigit(ch);
 }
 
-blok_Obj blok_reader_parse_symbol(FILE * fp) {
+
+blok_Obj blok_reader_parse_obj(FILE * fp);
+
+blok_Obj blok_reader_parse_symbol_or_keyvalue(FILE * fp) {
     assert(isalpha(blok_reader_peek(fp)));
     blok_Symbol sym = {0};
     uint32_t i = 0;
@@ -566,11 +590,21 @@ blok_Obj blok_reader_parse_symbol(FILE * fp) {
         }
     }
 
-    return blok_make_symbol(sym.buf);
+    blok_reader_skip_whitespace(fp);
+    if(blok_reader_peek(fp) == ':') {
+        blok_Obj result = blok_obj_allocate(BLOK_TAG_KEYVALUE, sizeof(blok_KeyValue));
+        blok_KeyValue* kv = blok_obj_extract_ptr(result);
+        fgetc(fp); /*skip ':'*/
+        kv->key = sym; 
+        kv->value = blok_reader_parse_obj(fp);
+        return result;
+    } else {
+        return blok_make_symbol(sym.buf);
+    }
 }
 
 blok_Obj blok_reader_read(FILE *);
-blok_Obj blok_reader_read_obj(FILE * fp) {
+blok_Obj blok_reader_parse_obj(FILE * fp) {
     blok_reader_skip_whitespace(fp);
     const char ch = blok_reader_peek(fp);
 
@@ -587,7 +621,7 @@ blok_Obj blok_reader_read_obj(FILE * fp) {
     } else if(ch == '"') {
         return blok_reader_parse_string(fp);
     } else if(isalpha(ch)) {
-        return blok_reader_parse_symbol(fp);
+        return blok_reader_parse_symbol_or_keyvalue(fp);
     } else {
         fatal_error(fp, "Parsing failed");
     }
@@ -598,7 +632,7 @@ blok_Obj blok_reader_read(FILE * fp) {
     blok_Obj result = blok_make_list(8);
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        blok_list_append(&result, blok_reader_read_obj(fp));
+        blok_list_append(&result, blok_reader_parse_obj(fp));
         blok_reader_skip_whitespace(fp);
     }
     return result;
@@ -608,29 +642,50 @@ blok_Obj blok_reader_read(FILE * fp) {
 
 blok_State blok_state_init(void) {
     blok_State env = {0};
-    blok_table_set(&env.symbols[0], blok_make_symbol("print"), blok_make_int(BLOK_PRIMITIVE_PRINT));
+    blok_table_set(&env.globals, (blok_Symbol){.buf = "print"}, blok_make_int(BLOK_PRIMITIVE_PRINT));
     return env;
 }
 
 
 void blok_state_deinit(blok_State * env) {
-    for(int32_t i = 0; i < MAX_SCOPE_DEPTH; ++i) {
-        blok_table_empty(&env->symbols[i]);
-    }
+    blok_table_empty(&env->globals);
 }
 
-blok_Obj * blok_state_lookup_symbol(blok_State * env, blok_Symbol sym) {
-    for(int32_t i = 0; i < env->scope_depth; ++i) {
-        
-    }
+blok_KeyValue * blok_state_lookup(blok_State * env, blok_Symbol sym) {
+    return blok_table_get(&env->globals, sym);
 }
 
 
-blok_Obj blok_evaluator_apply(blok_State * env, blok_Symbol sym, int32_t argc, blok_Obj * argv) {
+blok_Obj blok_evaluator_apply_list(blok_State * env, int32_t argc, blok_Obj * argv) {
+    /*
+    (void)env;
+    (void)sym;
+    (void)argc;
+    (void)argv;
+    */
 
+    if(argc == 0) {
+        fatal_error(NULL, "cannot apply empty list");
+    }
+    blok_Symbol * sym = blok_symbol_from_obj(argv[0]);
+    blok_KeyValue * kv = blok_state_lookup(env, *sym);
+    blok_Obj value = kv->value;
+    if(value.tag == BLOK_TAG_PRIMITIVE) {
+        /*return blok_evaluator_apply_primitive(blok_State * env, _);*/
+    } else if(value.tag == BLOK_TAG_FUNCTION) {
+
+    } else {
+        fatal_error(NULL, "Value to be applied is not applyable");
+    }
+
+
+
+    /*TODO*/
+    return blok_make_nil();
 }
 
 blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
+    (void)env;
     switch(obj.tag) {
         case BLOK_TAG_NIL:
         case BLOK_TAG_INT:
