@@ -5,7 +5,7 @@ SRC= c23.c
 
 
 c23: ${SRC} Makefile
-	clang ${SRC} -g -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=c23 ${MAX_ERRORS_CLANG} -o c23
+	clang ${SRC} -g -O3 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=c23 ${MAX_ERRORS_CLANG} -o c23
 
 run: c23
 	./c23

@@ -73,9 +73,9 @@ typedef struct {
 } blok_KeyValue;
 
 typedef struct {
-    int32_t count;
-    int32_t cap;
-    int32_t iterate_i;
+    uint32_t count;
+    uint32_t cap;
+    uint32_t iterate_i;
     blok_KeyValue * items;
 } blok_Table;
 
@@ -278,10 +278,10 @@ void blok_string_append(blok_Obj str, char ch) {
     l->ptr[l->len] = 0;
 }
 
-int32_t blok_hash_char_ptr(char * const ptr, int32_t len) {
+uint64_t blok_hash_char_ptr(char * const ptr, uint64_t len) {
     /* Inspired by djbt2 by Dan Bernstein - http://www.cse.yorku.ca/~oz/hash.html */
-    int32_t hash = 5381;
-    int32_t i = 0;
+    uint64_t hash = 5381;
+    uint64_t i = 0;
 
     for(i = 0; i < len; ++i) {
         const unsigned char c = (unsigned char)ptr[i];
@@ -330,10 +330,10 @@ void blok_table_iterate_start(blok_Table * table) {
 }
 
 blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
-    int32_t i = blok_hash(key) % (table->cap - 1);
+    uint64_t i = blok_hash(key) % (table->cap - 1);
     assert(i >= 0);
     assert(i < table->cap);
-    const int start = i;
+    const uint64_t start = i;
 
     while (!blok_symbol_equal(table->items[i].key, key) &&
            !blok_symbol_empty(table->items[i].key)) {
@@ -348,12 +348,12 @@ blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
 }
 
 blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
-void blok_table_rehash(blok_Table * table, int32_t new_cap) {
+void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     if(new_cap < table->count) {
         fatal_error(NULL, "new table capacity is smaller than the older one");
     }
     blok_Table new = blok_table_init_capacity(new_cap);
-    for(int i = 0; i < table->cap; ++i) {
+    for(uint64_t i = 0; i < table->cap; ++i) {
         blok_KeyValue item = table->items[i];
         if(!blok_symbol_empty(item.key)) {
             blok_table_set(&new, item.key, item.value);
@@ -398,6 +398,12 @@ void blok_table_empty(blok_Table * table) {
     }
     free(table->items);
     memset(table, 0, sizeof(blok_Table));
+}
+
+
+const char * blok_obj_tag_string(blok_Obj obj) {
+
+    /*TODO return a string of the tag*/
 }
 
 void blok_obj_free(blok_Obj obj) {
@@ -656,7 +662,26 @@ blok_KeyValue * blok_state_lookup(blok_State * env, blok_Symbol sym) {
 }
 
 
-blok_Obj blok_evaluator_apply_list(blok_State * env, int32_t argc, blok_Obj * argv) {
+blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj);
+
+blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
+                                        int32_t argc, blok_Obj *argv) {
+    switch(prim) {
+        case BLOK_PRIMITIVE_PRINT:
+            if(argc > 0) {
+                blok_obj_print(blok_evaluator_eval(env, argv[0])); 
+                blok_evaluator_apply_primitive(env, prim, argc - 1, ++argv);
+            }
+            break;
+        default:
+            fatal_error(NULL, "Unknown primitive");
+            break;
+    }
+
+    return blok_make_nil();
+}
+
+blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
     /*
     (void)env;
     (void)sym;
@@ -664,23 +689,25 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, int32_t argc, blok_Obj * ar
     (void)argv;
     */
 
-    if(argc == 0) {
+    if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
-    blok_Symbol * sym = blok_symbol_from_obj(argv[0]);
-    blok_KeyValue * kv = blok_state_lookup(env, *sym);
-    blok_Obj value = kv->value;
-    if(value.tag == BLOK_TAG_PRIMITIVE) {
-        /*return blok_evaluator_apply_primitive(blok_State * env, _);*/
-    } else if(value.tag == BLOK_TAG_FUNCTION) {
 
+    printf("list->items[0] is ");
+    blok_obj_print(list->items[0]);
+    printf("\n");
+    blok_Obj fn = blok_evaluator_eval(env, list->items[0]);
+    printf("function value: ");
+    blok_obj_print(fn);
+    printf("\n");
+    if(fn.tag == BLOK_TAG_PRIMITIVE) {
+        return blok_evaluator_apply_primitive(env, fn.data, list->len - 1, &list->items[1]);
+    } else if(fn.tag == BLOK_TAG_FUNCTION) {
+        fatal_error(NULL, "TODO implement functions");
     } else {
         fatal_error(NULL, "Value to be applied is not applyable");
     }
 
-
-
-    /*TODO*/
     return blok_make_nil();
 }
 
@@ -692,6 +719,19 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
         case BLOK_TAG_STRING:
             return obj;
         case BLOK_TAG_SYMBOL:
+            {
+                blok_Symbol * sym = blok_symbol_from_obj(obj);
+                blok_KeyValue * kv = blok_state_lookup(env, *sym);
+                return kv->value;
+            }
+        case BLOK_TAG_LIST:
+            {
+                blok_List * list = blok_list_from_obj(obj);
+                return blok_evaluator_apply_list(env, list);
+            }
+        default:
+            fatal_error(NULL, "Support for evaluating this type has not been implemented yet");
+            break;
 
     }
 
@@ -702,7 +742,14 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
 int main(void) {
     FILE * fp = fopen("c23-test.lisp", "r");
     blok_Obj source = blok_reader_read(fp);
-    blok_obj_print(source);
+    /*blok_obj_print(source);*/
+
+    blok_State env = blok_state_init();
+
+    blok_Obj result = blok_evaluator_eval(&env, source);
+    blok_obj_print(result);
+
+    blok_state_deinit(&env);
     blok_obj_free(source);
     fclose(fp);
     return 0;

@@ -1,10 +1,1 @@
-(hello world)
-(foo bar)
-(add 1 2)
-(print "hello there\"")
-(print "hello there")
-(hi there hello)
-
-
-(hello:type:  
-  foo world)
+print "hello world from print fn"
