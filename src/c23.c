@@ -231,7 +231,8 @@ bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
 }
 
 bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
-    return strncmp(lhs.buf, rhs.buf, strnlen(lhs.buf, sizeof(lhs.buf))) == 0;
+    printf("\"%s\" == \"%s\" ??\n", lhs.buf, rhs.buf);
+    return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf)) == 0;
 }
 
 
@@ -321,7 +322,7 @@ uint64_t blok_hash_char_ptr(char * const ptr, uint64_t len) {
 
 
 int32_t blok_hash(blok_Symbol sym) {
-    return blok_hash_char_ptr(sym.buf, BLOK_SYMBOL_MAX_LEN);
+    return blok_hash_char_ptr(sym.buf, strnlen(sym.buf, BLOK_SYMBOL_MAX_LEN));
 }
 
 blok_Table blok_table_init_capacity(int32_t cap) {
@@ -337,11 +338,10 @@ blok_Table blok_table_init_capacity(int32_t cap) {
 
 
 blok_Obj blok_make_table(int32_t size) {
-    blok_Obj result = {0};
-    blok_Table * ptr = malloc(sizeof(blok_Table));
+    blok_Obj result = blok_obj_allocate(BLOK_TAG_TABLE, sizeof(blok_Table));
+    blok_Table * ptr = blok_obj_extract_ptr(result);
     *ptr = blok_table_init_capacity(size);
     result.ptr = ptr;
-    result.tag = BLOK_TAG_TABLE;
     return result;
 }
 
@@ -359,22 +359,56 @@ void blok_table_iterate_start(blok_Table * table) {
     table->iterate_i = 0;
 }
 
-blok_KeyValue * blok_table_get(blok_Table * table, blok_Symbol key) {
+blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
+    /*
+    function find_slot(key)
+        i := hash(key) modulo num_slots
+        // search until we either find the key, or find an empty slot.
+        while (slot[i] is occupied) and (slot[i].key ≠ key)
+            i := (i + 1) modulo num_slots
+        return i
+    */
+
+    printf("looking for key: %s\n", key.buf);
     uint64_t i = blok_hash(key) % (table->cap - 1);
+    printf("hash is %llu\n", i);
     assert(i >= 0);
     assert(i < table->cap);
+
     const uint64_t start = i;
     (void) start;
 
+    do {
+        blok_KeyValue kv = table->items[i];
+        if(blok_symbol_equal(kv.key, key)) {
+            printf("FOUND MATCH for %s\n", kv.key.buf);
+            return &table->items[i];
+        }
+        if(blok_symbol_empty(kv.key)) {
+            printf("FOUND EMPTY SLOT\n");
+            return &table->items[i];
+        }
+
+
+        ++i;
+        i = i % table->cap;
+        if(i == start) fatal_error(NULL, "looped when searching for key");
+    } while(1);
     /*
     printf("first location found key: %s\n", table->items[i].key.buf); fflush(stdout);
     printf("desired key: %s\n", key.buf);
     printf("does first location key match? %d\n", blok_symbol_equal(key, table->items[i].key));
     */
+}
 
-    if(blok_symbol_empty(table->items[i].key)) return &table->items[i];
-    if(!blok_symbol_equal(table->items[i].key, key)) fatal_error(NULL, "todo, fix collisions");
-    return &table->items[i];
+blok_Obj * blok_table_get(blok_Table * table, blok_Symbol key) {
+    blok_KeyValue * kv = blok_table_find_slot(table, key);
+    if(blok_symbol_empty(kv->key)) {
+        printf("key is empty: %s\n", kv->key.buf);
+        return NULL;
+    } else {
+        return &kv->value;
+    }
 }
 
 blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
@@ -394,40 +428,76 @@ void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
 }
 
 blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
+    /*
+    function set(key, value)
+        i := find_slot(key)
+        if slot[i] is occupied   // we found our key
+            slot[i].value := value
+            return
+        if the table is almost full
+            rebuild the table larger (note 1)
+            i := find_slot(key)
+        mark slot[i] as occupied
+        slot[i].key := key
+        slot[i].value := value
+    */
+
     if(table->cap == 0) {
-        /*printf("initializing table\n"); fflush(stdout);*/
         *table = blok_table_init_capacity(8);
-    } else if(table->count + 1 > table->cap / 3) {
-        /*printf("rehashing table\n"); fflush(stdout);*/
+    } 
+
+    if(table->count + 1 > table->cap / 3) {
         blok_table_rehash(table, table->cap * 3);
     }
-    blok_KeyValue * dest = blok_table_get(table, key);
-    /*printf("table destination key: %s\n", dest->key.buf); fflush(stdout);*/
-    if(blok_symbol_empty(dest->key)) {
-        /*printf("increasing table count\n"); fflush(stdout);*/
+
+    blok_KeyValue * kv = blok_table_find_slot(table, key);
+    if(!blok_symbol_empty(kv->key)) {
+        assert(blok_symbol_equal(kv->key, key));
+        blok_obj_free(kv->value);
+        /*TODO clone value here to preserve value semantics on assignment*/
+        kv->value = value;
+        return blok_make_nil();
+    } else { 
+        kv->key = key;
+        /*TODO clone value here to preserve value semantics on assignment*/
+        kv->value = value;
         ++table->count;
-    } else if(blok_symbol_equal(dest->key, key)) {
-        /*printf("replacing existing table entry\n"); fflush(stdout);*/
-    } else {
-          fatal_error(NULL,
-                      "Failed to find a NULL key or a matching key for %s\n",
-                      key.buf);
+        return blok_make_nil();
     }
-    dest->key = key;
-    blok_Obj old = dest->value;
-    dest->value = value;
-    return old;
 }
 
 blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
-    blok_KeyValue * dest = blok_table_get(table, key);
-    if(blok_symbol_empty(dest->key)) {
-        return blok_make_nil();
-    } else {
-        dest->key = (blok_Symbol){0};
-        --table->count;
-        return dest->value;
-    }
+    (void) table;
+    (void) key;
+    /*
+    function remove(key)
+        i := find_slot(key)
+        if slot[i] is unoccupied
+            return   // key is not in the table
+        mark slot[i] as unoccupied
+        j := i
+        loop (note 2)
+            j := (j + 1) modulo num_slots
+            if slot[j] is unoccupied
+                exit loop
+            k := hash(slot[j].key) modulo num_slots
+            // determine if k lies cyclically in (i,j]
+            // i ≤ j: |    i..k..j    |
+            // i > j: |.k..j     i....| or |....j     i..k.|
+            if i ≤ j
+                if (i < k) and (k ≤ j)
+                    continue loop
+            else
+                if (k ≤ j) or (i < k)
+                    continue loop
+            mark slot[i] as occupied
+            slot[i].key := slot[j].key
+            slot[i].value := slot[j].value
+            mark slot[j] as unoccupied
+            i := j
+    */
+    fatal_error(NULL, "TODO implement unset");
+    return blok_make_nil();
 }
 
 void blok_table_empty(blok_Table * table) {
@@ -454,14 +524,14 @@ void blok_table_run_tests(void) {
     assert(table.iterate_i == 0);
     assert(table.items != NULL);
 
-    blok_KeyValue *kv =
+    blok_Obj *value =
         blok_table_get(&table, blok_symbol_from_char_ptr("hello"));
+    assert(value);
+    assert(value->data == 10);
     assert(table.cap == 16);
     assert(table.count == 1);
     assert(table.iterate_i == 0);
     assert(table.items != NULL);
-    assert(kv->value.data == 10);
-    assert(strncmp(kv->key.buf, "hello", 5) == 0);
 }
 
 
@@ -504,6 +574,27 @@ void blok_obj_free(blok_Obj obj) {
     }
 }
 
+void blok_obj_print(blok_Obj obj);
+
+void blok_keyvalue_print(blok_KeyValue * const kv) {
+    printf("%s:", kv->key.buf);
+    blok_obj_print(kv->value);
+}
+
+void blok_table_print(blok_Table * const table) {
+    blok_table_iterate_start(table);
+    blok_KeyValue * kv = NULL;
+    bool first = true;
+    printf("[");
+    while((kv = blok_table_iterate_next(table)) != NULL) {
+        if(!first) printf(" ");
+        first = false;
+        printf("%s:", kv->key.buf);
+        blok_obj_print(kv->value);
+    }
+    printf("]");
+}
+
 void blok_obj_print(blok_Obj obj) {
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
@@ -513,8 +604,7 @@ void blok_obj_print(blok_Obj obj) {
             printf("%d", obj.data);
             break;
         case BLOK_TAG_PRIMITIVE:
-            obj.tag = 0;
-            printf("<Primitive %p>", obj.ptr);
+            printf("<Primitive %d>", obj.data);
             break;
         case BLOK_TAG_LIST:
             {
@@ -534,12 +624,10 @@ void blok_obj_print(blok_Obj obj) {
             printf("%s", blok_symbol_from_obj(obj)->buf);
             break;
         case BLOK_TAG_KEYVALUE:
-            {
-                blok_KeyValue * kv =  blok_keyvalue_from_obj(obj);
-                printf("%s:", kv->key.buf);
-                blok_obj_print(kv->value);
-            }
+            blok_keyvalue_print(blok_keyvalue_from_obj(obj));
             break;
+        case BLOK_TAG_TABLE:
+            blok_table_print(blok_table_from_obj(obj));
         default:
             printf("UNSUPPORTED TYPE");
             break;
@@ -709,7 +797,10 @@ blok_Obj blok_reader_read(FILE * fp) {
 blok_State blok_state_init(void) {
     blok_State env = {0};
     blok_table_set(&env.globals, blok_symbol_from_char_ptr("print"), blok_make_primitive(BLOK_PRIMITIVE_PRINT));
-    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->value.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
+    printf("Globals: ");
+    blok_table_print(&env.globals);
+    printf("\n\n");
     return env;
 }
 
@@ -718,7 +809,7 @@ void blok_state_deinit(blok_State * env) {
     blok_table_empty(&env->globals);
 }
 
-blok_KeyValue * blok_state_lookup(blok_State * env, blok_Symbol sym) {
+blok_Obj * blok_state_lookup(blok_State * env, blok_Symbol sym) {
     return blok_table_get(&env->globals, sym);
 }
 
@@ -750,11 +841,15 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
     (void)argv;
     */
 
+    printf("Globals: ");
+    blok_table_print(&env->globals);
+    printf("\n\n");
+
     if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
 
-    assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->value.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
 
     printf("list->items[0] is ");
     blok_obj_print(list->items[0]);
@@ -788,18 +883,27 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
             return obj;
         case BLOK_TAG_SYMBOL:
             {
-                assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->value.data == BLOK_PRIMITIVE_PRINT);
+
+                printf("Globals: ");
+                blok_table_print(&env->globals);
+                printf("\n\n");
+                assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
                 printf("evaluating symbol: %s\n", sym->buf);
                 blok_Symbol direct = *sym;
                 printf("symbol len: %lu\n", strlen(direct.buf));
-                printf("directly evaluating symbol: %s\n", direct.buf);
-                blok_KeyValue * kv = blok_state_lookup(env, direct);
-                printf("found  ->  ");
-                printf("\"%s\":", kv->key.buf);
-                blok_obj_print(kv->value);
+                printf("directly evaluating symbol: \"%s\"\n", direct.buf);
+                blok_Obj * value = blok_state_lookup(env, direct);
+                printf("Globals: ");
+                blok_table_print(&env->globals);
                 printf("\n\n");
-                return kv->value;
+                if(value == NULL) {
+                    fatal_error(NULL, "tried to evaluate null symbol");
+                }
+                printf("found  ->  ");
+                blok_obj_print(*value);
+                printf("\n\n");
+                return *value;
             }
         case BLOK_TAG_LIST:
             {
@@ -825,8 +929,8 @@ int main(void) {
     /*blok_obj_print(source);*/
 
     blok_State env = blok_state_init();
-    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->value.data == BLOK_PRIMITIVE_PRINT);
-    assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->value.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
+        assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
 
     blok_Obj result = blok_evaluator_eval(&env, source);
     blok_obj_print(result);
