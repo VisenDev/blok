@@ -117,6 +117,9 @@ typedef enum {
     BLOK_PRIMITIVE_PRINT,
     BLOK_PRIMITIVE_PROGN,
     BLOK_PRIMITIVE_SET,
+    BLOK_PRIMITIVE_DEFUN,
+    BLOK_PRIMITIVE_QUOTE,
+    BLOK_PRIMITIVE_UNQUOTE,
 } blok_Primitive;
 
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
@@ -838,6 +841,10 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
                 }
                 return result;
             }
+        case BLOK_PRIMITIVE_DEFUN:
+            {
+
+            }
         default:
             fatal_error(NULL, "Unknown primitive");
             break;
@@ -898,8 +905,11 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
                 return blok_evaluator_apply_list(env, list);
             }
         default:
-            fatal_error(NULL, "Support for evaluating this type has not been implemented yet: %s", blok_char_ptr_from_tag(obj.tag));
-            break;
+          fatal_error(NULL,
+                      "Support for evaluating this type has not been "
+                      "implemented yet: %s",
+                      blok_char_ptr_from_tag(obj.tag));
+          break;
 
     }
 
