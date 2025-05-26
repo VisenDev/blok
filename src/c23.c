@@ -115,6 +115,8 @@ typedef struct {
 
 typedef enum {
     BLOK_PRIMITIVE_PRINT,
+    BLOK_PRIMITIVE_PROGN,
+    BLOK_PRIMITIVE_SET,
 } blok_Primitive;
 
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
@@ -231,7 +233,6 @@ bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
 }
 
 bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
-    printf("\"%s\" == \"%s\" ??\n", lhs.buf, rhs.buf);
     return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf)) == 0;
 }
 
@@ -369,9 +370,7 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
         return i
     */
 
-    printf("looking for key: %s\n", key.buf);
     uint64_t i = blok_hash(key) % (table->cap - 1);
-    printf("hash is %llu\n", i);
     assert(i >= 0);
     assert(i < table->cap);
 
@@ -381,11 +380,9 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
     do {
         blok_KeyValue kv = table->items[i];
         if(blok_symbol_equal(kv.key, key)) {
-            printf("FOUND MATCH for %s\n", kv.key.buf);
             return &table->items[i];
         }
         if(blok_symbol_empty(kv.key)) {
-            printf("FOUND EMPTY SLOT\n");
             return &table->items[i];
         }
 
@@ -394,17 +391,11 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
         i = i % table->cap;
         if(i == start) fatal_error(NULL, "looped when searching for key");
     } while(1);
-    /*
-    printf("first location found key: %s\n", table->items[i].key.buf); fflush(stdout);
-    printf("desired key: %s\n", key.buf);
-    printf("does first location key match? %d\n", blok_symbol_equal(key, table->items[i].key));
-    */
 }
 
 blok_Obj * blok_table_get(blok_Table * table, blok_Symbol key) {
     blok_KeyValue * kv = blok_table_find_slot(table, key);
     if(blok_symbol_empty(kv->key)) {
-        printf("key is empty: %s\n", kv->key.buf);
         return NULL;
     } else {
         return &kv->value;
@@ -566,7 +557,8 @@ void blok_obj_free(blok_Obj obj) {
             free(blok_keyvalue_from_obj(obj));
         case BLOK_TAG_INT:
         case BLOK_TAG_NIL:
-            /*No freeing needed for ints or nil*/
+        case BLOK_TAG_PRIMITIVE:
+            /*No freeing needed for these types*/
             break;
         default:
             fatal_error(NULL, "Tag cannot be freed");
@@ -596,6 +588,9 @@ void blok_table_print(blok_Table * const table) {
 }
 
 void blok_obj_print(blok_Obj obj) {
+    /*TODO support either aesthetic mode or code mode (ie, put quotes around 
+     * strings? convert newlines into escape sequences, etc..."
+     */
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
             printf("nil");
@@ -707,6 +702,9 @@ blok_Obj blok_reader_parse_string(FILE * fp) {
                     case 'n':
                         blok_string_append(str, '\n');
                         break;
+                    case 't':
+                        blok_string_append(str, '\t');
+                        break;
                     case '"':
                         blok_string_append(str, '"');
                         break;
@@ -757,7 +755,7 @@ blok_Obj blok_reader_parse_symbol_or_keyvalue(FILE * fp) {
     }
 }
 
-blok_Obj blok_reader_read(FILE *);
+//blok_Obj blok_reader_read_obj(FILE *);
 blok_Obj blok_reader_parse_obj(FILE * fp) {
     blok_reader_skip_whitespace(fp);
     const char ch = blok_reader_peek(fp);
@@ -765,8 +763,12 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
     if(isdigit(ch)) {
         return blok_reader_parse_int(fp); 
     } else if(ch == '(') {
+        blok_Obj result = blok_make_list(8);
         fgetc(fp);
-        blok_Obj result = blok_reader_read(fp);
+        while(blok_reader_peek(fp) != ')' && !feof(fp)) {
+            blok_list_append(&result, blok_reader_parse_obj(fp));
+            blok_reader_skip_whitespace(fp);
+        }
         if (blok_reader_peek(fp) != ')')
             fatal_error(fp, "Expected close parenthesis, found %c",
                     blok_reader_peek(fp));
@@ -782,8 +784,9 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
     return blok_make_nil();
 }
 
-blok_Obj blok_reader_read(FILE * fp) {
+blok_Obj blok_reader_read_file(FILE * fp) {
     blok_Obj result = blok_make_list(8);
+    blok_list_append(&result, blok_make_symbol("progn"));
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
         blok_list_append(&result, blok_reader_parse_obj(fp));
@@ -796,11 +799,12 @@ blok_Obj blok_reader_read(FILE * fp) {
 
 blok_State blok_state_init(void) {
     blok_State env = {0};
-    blok_table_set(&env.globals, blok_symbol_from_char_ptr("print"), blok_make_primitive(BLOK_PRIMITIVE_PRINT));
-    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
-    printf("Globals: ");
+    blok_table_set(&env.globals, blok_symbol_from_char_ptr("print"),
+                   blok_make_primitive(BLOK_PRIMITIVE_PRINT));
+    blok_table_set(&env.globals, blok_symbol_from_char_ptr("progn"),
+                   blok_make_primitive(BLOK_PRIMITIVE_PROGN));
     blok_table_print(&env.globals);
-    printf("\n\n");
+    fflush(stdout);
     return env;
 }
 
@@ -825,6 +829,15 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
                 blok_evaluator_apply_primitive(env, prim, argc - 1, ++argv);
             }
             break;
+        case BLOK_PRIMITIVE_PROGN:
+            {
+                blok_Obj result = blok_make_nil();
+                for(int32_t i = 0; i < argc; ++i) {
+                    /*blok_obj_free(result);*/
+                    result = blok_evaluator_eval(env, argv[i]);
+                }
+                return result;
+            }
         default:
             fatal_error(NULL, "Unknown primitive");
             break;
@@ -841,25 +854,11 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
     (void)argv;
     */
 
-    printf("Globals: ");
-    blok_table_print(&env->globals);
-    printf("\n\n");
 
     if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
-
-    assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
-
-    printf("list->items[0] is ");
-    blok_obj_print(list->items[0]);
-    printf("  :  %s\n", blok_char_ptr_from_tag(list->items[0].tag));
-    assert(blok_obj_equal(list->items[0], blok_make_symbol("print")));
-    printf("\n");
     blok_Obj fn = blok_evaluator_eval(env, list->items[0]);
-    printf("function value: ");
-    blok_obj_print(fn);
-    printf("\n");
     if(fn.tag == BLOK_TAG_PRIMITIVE) {
         return blok_evaluator_apply_primitive(env, fn.data, list->len - 1, &list->items[1]);
     } else if(fn.tag == BLOK_TAG_FUNCTION) {
@@ -884,25 +883,13 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
         case BLOK_TAG_SYMBOL:
             {
 
-                printf("Globals: ");
-                blok_table_print(&env->globals);
-                printf("\n\n");
                 assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
-                printf("evaluating symbol: %s\n", sym->buf);
                 blok_Symbol direct = *sym;
-                printf("symbol len: %lu\n", strlen(direct.buf));
-                printf("directly evaluating symbol: \"%s\"\n", direct.buf);
                 blok_Obj * value = blok_state_lookup(env, direct);
-                printf("Globals: ");
-                blok_table_print(&env->globals);
-                printf("\n\n");
                 if(value == NULL) {
                     fatal_error(NULL, "tried to evaluate null symbol");
                 }
-                printf("found  ->  ");
-                blok_obj_print(*value);
-                printf("\n\n");
                 return *value;
             }
         case BLOK_TAG_LIST:
@@ -911,7 +898,7 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
                 return blok_evaluator_apply_list(env, list);
             }
         default:
-            fatal_error(NULL, "Support for evaluating this type has not been implemented yet");
+            fatal_error(NULL, "Support for evaluating this type has not been implemented yet: %s", blok_char_ptr_from_tag(obj.tag));
             break;
 
     }
@@ -925,15 +912,16 @@ int main(void) {
     blok_table_run_tests();
 
     FILE * fp = fopen("c23-test.lisp", "r");
-    blok_Obj source = blok_reader_read(fp);
-    /*blok_obj_print(source);*/
+    blok_Obj source = blok_reader_read_file(fp);
+    blok_obj_print(source);
+    printf("\n\n");
 
     blok_State env = blok_state_init();
+    printf("\n\n");
     assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
-        assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
 
-    blok_Obj result = blok_evaluator_eval(&env, source);
-    blok_obj_print(result);
+    blok_evaluator_eval(&env, source);
 
     blok_state_deinit(&env);
     blok_obj_free(source);
