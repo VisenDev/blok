@@ -2,10 +2,11 @@ ERRORS=3
 MAX_ERRORS_GCC= "--max-errors=${ERRORS}"
 MAX_ERRORS_CLANG= "-ferror-limit=${ERRORS}"
 SRC= c23.c
+STD= c11
 
 
 c23: ${SRC} Makefile
-	clang ${SRC} -g -O3 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=c23 ${MAX_ERRORS_CLANG} -o c23
+	clang ${SRC} -g -O3 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=$(STD) ${MAX_ERRORS_CLANG} -o c23
 
 run: c23
 	./c23

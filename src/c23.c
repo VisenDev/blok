@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -176,11 +177,12 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 blok_Obj blok_make_string(const char * str) {
     const int32_t len = strlen(str);
     blok_String * blok_str = malloc(sizeof(blok_String));
-    assert(((uintptr_t)blok_str & 0b1111) == 0);
+    assert(((uintptr_t)blok_str & 0xf) == 0);
 
     blok_str->len = len;
     blok_str->cap = len + 1;
-    blok_str->ptr = strdup(str);
+    blok_str->ptr = malloc(len + 1);
+    strncpy(blok_str->ptr, str, len + 1);
 
     blok_Obj result = {.ptr = blok_str};
     result.tag = BLOK_TAG_STRING;
@@ -326,7 +328,7 @@ uint64_t blok_hash_char_ptr(char * const ptr, uint64_t len) {
 
 
 int32_t blok_hash(blok_Symbol sym) {
-    return blok_hash_char_ptr(sym.buf, strnlen(sym.buf, BLOK_SYMBOL_MAX_LEN));
+    return blok_hash_char_ptr(sym.buf, (char*)memchr(sym.buf, 0, BLOK_SYMBOL_MAX_LEN) - sym.buf);
 }
 
 blok_Table blok_table_init_capacity(int32_t cap) {
@@ -526,6 +528,8 @@ void blok_table_run_tests(void) {
     assert(table.count == 1);
     assert(table.iterate_i == 0);
     assert(table.items != NULL);
+
+    blok_table_empty(&table);
 }
 
 
@@ -569,14 +573,19 @@ void blok_obj_free(blok_Obj obj) {
     }
 }
 
-void blok_obj_print(blok_Obj obj);
+typedef enum {
+    BLOK_STYLE_AESTHETIC,
+    BLOK_STYLE_CODE
+} blok_Style;
 
-void blok_keyvalue_print(blok_KeyValue * const kv) {
+void blok_obj_print(blok_Obj obj, blok_Style style);
+
+void blok_keyvalue_print(blok_KeyValue * const kv, blok_Style style) {
     printf("%s:", kv->key.buf);
-    blok_obj_print(kv->value);
+    blok_obj_print(kv->value, style);
 }
 
-void blok_table_print(blok_Table * const table) {
+void blok_table_print(blok_Table * const table, blok_Style style) {
     blok_table_iterate_start(table);
     blok_KeyValue * kv = NULL;
     bool first = true;
@@ -585,15 +594,31 @@ void blok_table_print(blok_Table * const table) {
         if(!first) printf(" ");
         first = false;
         printf("%s:", kv->key.buf);
-        blok_obj_print(kv->value);
+        blok_obj_print(kv->value, style);
     }
     printf("]");
 }
 
-void blok_obj_print(blok_Obj obj) {
-    /*TODO support either aesthetic mode or code mode (ie, put quotes around 
-     * strings? convert newlines into escape sequences, etc..."
-     */
+void blok_print_escape_sequences(const char * str) {
+    for(;*str != 0; ++str) {
+        switch(*str) {
+            case '\t':
+                printf("\\t");
+                break;
+            case '\n':
+                printf("\\n");
+                break;
+            case '\\':
+                printf("\\\\");
+                break;
+            default:
+                printf("%c", *str);
+                break;
+        }
+    }
+}
+
+void blok_obj_print(blok_Obj obj, blok_Style style) {
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
             printf("nil");
@@ -610,24 +635,33 @@ void blok_obj_print(blok_Obj obj) {
                 printf("(");
                 for(int i = 0; i < list->len; ++i) {
                     if(i != 0) printf(" ");
-                    blok_obj_print(list->items[i]);
+                    blok_obj_print(list->items[i], style);
                 }
                 printf(")");
             }
             break;
         case BLOK_TAG_STRING:
-            printf("\"%s\"", blok_string_from_obj(obj)->ptr);
+            switch(style) {
+                case BLOK_STYLE_AESTHETIC:
+                printf("%s", blok_string_from_obj(obj)->ptr);
+                break;
+                case BLOK_STYLE_CODE:
+                printf("\"");
+                blok_print_escape_sequences(blok_string_from_obj(obj)->ptr);
+                printf("\"");
+                break;
+            }
             break;
         case BLOK_TAG_SYMBOL:
             printf("%s", blok_symbol_from_obj(obj)->buf);
             break;
         case BLOK_TAG_KEYVALUE:
-            blok_keyvalue_print(blok_keyvalue_from_obj(obj));
+            blok_keyvalue_print(blok_keyvalue_from_obj(obj), style);
             break;
         case BLOK_TAG_TABLE:
-            blok_table_print(blok_table_from_obj(obj));
+            blok_table_print(blok_table_from_obj(obj), style);
         default:
-            printf("UNSUPPORTED TYPE");
+            printf("<UNSUPPORTED TYPE: %s>", blok_char_ptr_from_tag(obj.tag));
             break;
     }
 }
@@ -806,7 +840,7 @@ blok_State blok_state_init(void) {
                    blok_make_primitive(BLOK_PRIMITIVE_PRINT));
     blok_table_set(&env.globals, blok_symbol_from_char_ptr("progn"),
                    blok_make_primitive(BLOK_PRIMITIVE_PROGN));
-    blok_table_print(&env.globals);
+    blok_table_print(&env.globals, BLOK_STYLE_AESTHETIC);
     fflush(stdout);
     return env;
 }
@@ -828,7 +862,7 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
     switch(prim) {
         case BLOK_PRIMITIVE_PRINT:
             if(argc > 0) {
-                blok_obj_print(blok_evaluator_eval(env, argv[0])); 
+                blok_obj_print(blok_evaluator_eval(env, argv[0]), BLOK_STYLE_AESTHETIC); 
                 blok_evaluator_apply_primitive(env, prim, argc - 1, ++argv);
             }
             break;
@@ -872,7 +906,7 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
         fatal_error(NULL, "TODO implement functions");
     } else {
         printf("Found this value assigned to the symbol: ");
-        blok_obj_print(fn);
+        blok_obj_print(fn, BLOK_STYLE_CODE);
         puts("");
         fatal_error(NULL, "Value to be applied is not applyable");
     }
@@ -923,7 +957,7 @@ int main(void) {
 
     FILE * fp = fopen("c23-test.lisp", "r");
     blok_Obj source = blok_reader_read_file(fp);
-    blok_obj_print(source);
+    blok_obj_print(source, BLOK_STYLE_CODE);
     printf("\n\n");
 
     blok_State env = blok_state_init();
