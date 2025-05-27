@@ -174,6 +174,7 @@ blok_Obj blok_make_function(blok_Obj params, blok_Obj body) {
 }
 
 
+//TODO factor out this into multiple functions
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
     blok_List * list = malloc(size);
@@ -679,6 +680,10 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
 /* All objects use value semantics, so they should be copied when being assigned
  * or passed as parameters
  */
+blok_List blok_list_copy(blok_List * list) {
+    blok_list_
+}
+
 blok_Obj blok_obj_copy(blok_Obj obj) {
     /*TODO finish*/
     switch(obj.tag) {
