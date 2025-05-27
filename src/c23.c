@@ -98,15 +98,15 @@ typedef struct {
     blok_KeyValue * items;
 } blok_Table;
 
-#define BLOK_FUNCTION_MAX_PARAMS 8
+/*#define BLOK_FUNCTION_MAX_PARAMS 8*/
 typedef struct {
     //key: name, value: type
-    blok_KeyValue params[BLOK_FUNCTION_MAX_PARAMS];
-    int32_t param_count;
+    blok_Obj params;
     blok_Obj body;
-    blok_Table static_variables;
+    //blok_Table static_variables;
     //TODO figure out return types
 } blok_Function;
+
 
 
 typedef struct { 
@@ -161,6 +161,15 @@ blok_Obj blok_make_primitive(blok_Primitive data) {
 }
 blok_Obj blok_make_nil(void) {
     return (blok_Obj){0};
+}
+
+
+blok_Obj blok_make_function(blok_Obj params, blok_Obj body) {
+    blok_Obj result = blok_obj_allocate(BLOK_TAG_FUNCTION, sizeof(blok_Function));
+    blok_Function * fn = blok_obj_extract_ptr(result);
+    fn->params = params;
+    fn->body = body;
+    return result;
 }
 
 
@@ -627,7 +636,45 @@ void blok_obj_print(blok_Obj obj) {
         case BLOK_TAG_TABLE:
             blok_table_print(blok_table_from_obj(obj));
         default:
-            printf("UNSUPPORTED TYPE");
+            printf("<Unprintable %s>", blok_char_ptr_from_tag(obj.tag));
+            break;
+    }
+}
+
+
+/* All objects use value semantics, so they should be copied when being assigned
+ * or passed as parameters
+ */
+blok_Obj blok_obj_copy(blok_Obj obj) {
+    switch(obj.tag) {
+        case BLOK_TAG_NIL: 
+        case BLOK_TAG_INT:
+        case BLOK_TAG_PRIMITIVE:
+            return obj;
+        case BLOK_TAG_LIST:
+            {
+                blok_List * list = blok_list_from_obj(obj);
+                printf("(");
+                for(int i = 0; i < list->len; ++i) {
+                    if(i != 0) printf(" ");
+                    blok_obj_print(list->items[i]);
+                }
+                printf(")");
+            }
+            break;
+        case BLOK_TAG_STRING:
+            printf("\"%s\"", blok_string_from_obj(obj)->ptr);
+            break;
+        case BLOK_TAG_SYMBOL:
+            printf("%s", blok_symbol_from_obj(obj)->buf);
+            break;
+        case BLOK_TAG_KEYVALUE:
+            blok_keyvalue_print(blok_keyvalue_from_obj(obj));
+            break;
+        case BLOK_TAG_TABLE:
+            blok_table_print(blok_table_from_obj(obj));
+        default:
+            printf("<Unprintable %s>", blok_char_ptr_from_tag(obj.tag));
             break;
     }
 }
@@ -843,6 +890,17 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
             }
         case BLOK_PRIMITIVE_DEFUN:
             {
+                assert(argc > 2);
+                blok_Symbol * name = blok_symbol_from_obj(argv[0]);
+                blok_Obj params = argv[1];
+                if(params.tag != BLOK_TAG_LIST) {
+                    fatal_error(NULL,
+                            "Expected parameters to be a list, found %s",
+                            blok_char_ptr_from_tag(params.tag));
+                }
+                /*TODO get list of statements in body*/
+                blok_table_set(&env->globals, *name,
+                               blok_make_function());
 
             }
         default:
