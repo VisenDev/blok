@@ -154,6 +154,12 @@ blok_Symbol blok_symbol_from_char_ptr(const char * ptr) {
     return sym;
 }
 
+blok_Symbol * blok_symbol_allocate(void) {
+    blok_Symbol * result = malloc(sizeof(blok_Symbol));
+    memset(result, 0, sizeof(blok_Symbol));
+    return result;
+}
+
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .data = data};
 }
@@ -174,6 +180,17 @@ blok_Obj blok_make_function(blok_Obj params, blok_Obj body) {
 }
 
 
+blok_List * blok_list_allocate(int32_t initial_capacity) {
+    const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
+    blok_List * l = malloc(size);
+    memset(l, 0, size);
+    l->cap = initial_capacity;
+    l->len = 0;
+    return l;
+}
+
+
+/*
 blok_Obj blok_make_list(int32_t initial_capacity) {
     const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
     blok_List * list = malloc(size);
@@ -182,20 +199,38 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
     result.tag = BLOK_TAG_LIST;
     return result;
 }
+*/
 
-blok_Obj blok_make_string(const char * str) {
-    const int32_t len = strlen(str);
+blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
+    assert(((uintptr_t)ptr& 0xf) == 0);
+    _Static_assert(_Alignof(void*) >= 8, "void pointer failed alignment check");
+    blok_Obj obj = {0};
+    obj.ptr = ptr;
+    obj.tag = tag;
+    return obj;
+}
+
+blok_Obj blok_obj_from_list(blok_List * l) { return blok_obj_from_ptr(l, BLOK_TAG_LIST); }
+blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
+blok_Obj blok_obj_from_symbol(blok_Symbol * s) { return blok_obj_from_ptr(s, BLOK_TAG_SYMBOL); }
+blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
+
+blok_String * blok_string_allocate(uint64_t capacity) {
     blok_String * blok_str = malloc(sizeof(blok_String));
     assert(((uintptr_t)blok_str & 0xf) == 0);
 
-    blok_str->len = len;
-    blok_str->cap = len + 1;
-    blok_str->ptr = malloc(len + 1);
-    strncpy(blok_str->ptr, str, len + 1);
+    blok_str->len = 0;
+    blok_str->cap = capacity + 1;
+    blok_str->ptr = malloc(capacity + 1);
+    memset(blok_str->ptr, 0, capacity + 1);
+    return blok_str;
+}
 
-    blok_Obj result = {.ptr = blok_str};
-    result.tag = BLOK_TAG_STRING;
-    return result;
+blok_Obj blok_make_string(const char * str) {
+    const int32_t len = strlen(str);
+    blok_String * result = blok_string_allocate(len);
+    strncpy(result->ptr, str, len + 1);
+    return blok_obj_from_ptr(result, BLOK_TAG_STRING);
 }
 
 blok_Obj blok_make_symbol(const char * str) {
@@ -299,17 +334,15 @@ bool blok_symbol_empty(blok_Symbol sym) {
 
 void blok_obj_free(blok_Obj obj);
 
-void blok_list_append(blok_Obj * list, blok_Obj item) {
-    blok_List * l = blok_list_from_obj(*list);
+[[nodiscard]]
+blok_List * blok_list_append(blok_List* l, blok_Obj item) {
+    /*blok_List * l = blok_list_from_obj(*list);*/
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
         l = realloc(l, sizeof(blok_List) + l->cap * sizeof(blok_Obj));
     }
     l->items[l->len++] = item;
-
-
-    list->ptr = l;
-    list->tag = BLOK_TAG_LIST;
+    return l;
 }
 
 void blok_string_append(blok_Obj str, char ch) {
@@ -675,6 +708,27 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
     }
 }
 
+blok_Obj blok_obj_copy(blok_Obj obj);
+blok_List * blok_list_copy(blok_List const * const list) {
+    blok_List * result = blok_list_allocate(list->len);
+    for(int32_t i = 0; i < list->len; ++i) {
+        result = blok_list_append(result, blok_obj_copy(list->items[i]));
+    }
+    return result;
+}
+
+blok_String * blok_string_copy(blok_String const * const str) {
+    blok_String * result = blok_string_allocate(str->len);
+    strncpy(result->ptr, str->ptr, str->len + 1);
+    return result;
+}
+
+
+blok_Symbol * blok_symbol_copy(blok_Symbol const * const sym) {
+    blok_Symbol * result = blok_symbol_allocate();
+    memcpy(result->buf, sym->buf, sizeof(result->buf));
+    return result;
+}
 
 /* All objects use value semantics, so they should be copied when being assigned
  * or passed as parameters
@@ -687,31 +741,22 @@ blok_Obj blok_obj_copy(blok_Obj obj) {
         case BLOK_TAG_PRIMITIVE:
             return obj;
         case BLOK_TAG_LIST:
-            {
-                blok_List * list = blok_list_from_obj(obj);
-                printf("(");
-                for(int i = 0; i < list->len; ++i) {
-                    if(i != 0) printf(" ");
-                    blok_obj_print(list->items[i]);
-                }
-                printf(")");
-            }
-            break;
+            return blok_obj_from_list(blok_list_copy(blok_list_from_obj(obj)));
         case BLOK_TAG_STRING:
-            printf("\"%s\"", blok_string_from_obj(obj)->ptr);
-            break;
+            return blok_obj_from_string(blok_string_copy(blok_string_from_obj(obj)));
         case BLOK_TAG_SYMBOL:
-            printf("%s", blok_symbol_from_obj(obj)->buf);
+            return blok_obj_from_symbol(blok_symbol_copy(blok_symbol_from_obj(obj)));
             break;
         case BLOK_TAG_KEYVALUE:
-            blok_keyvalue_print(blok_keyvalue_from_obj(obj));
+            fatal_error(NULL, "TODO");
             break;
         case BLOK_TAG_TABLE:
-            blok_table_print(blok_table_from_obj(obj));
+            fatal_error(NULL, "TODO");
         default:
-            printf("<Unprintable %s>", blok_char_ptr_from_tag(obj.tag));
+            printf("<Uncopyable %s>", blok_char_ptr_from_tag(obj.tag));
             break;
     }
+    return blok_make_nil();
 }
 
 
@@ -848,17 +893,32 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
     if(isdigit(ch)) {
         return blok_reader_parse_int(fp); 
     } else if(ch == '(') {
-        blok_Obj result = blok_make_list(8);
+        blok_List * result = blok_list_allocate(8);
+        blok_List * tmp = blok_list_allocate(8);
+        int32_t sublist_count = 0;
         fgetc(fp);
+        blok_reader_skip_whitespace(fp);
         while(blok_reader_peek(fp) != ')' && !feof(fp)) {
-            blok_list_append(&result, blok_reader_parse_obj(fp));
-            blok_reader_skip_whitespace(fp);
+            if(blok_reader_peek(fp) == ',') {
+                result = blok_list_append(result, blok_obj_from_list(tmp));
+                tmp = blok_list_allocate(8);
+                ++sublist_count;
+            } else {
+                result = blok_list_append(tmp, blok_reader_parse_obj(fp));
+                blok_reader_skip_whitespace(fp);
+            }
         }
         if (blok_reader_peek(fp) != ')')
             fatal_error(fp, "Expected close parenthesis, found %c",
                     blok_reader_peek(fp));
         fgetc(fp);
-        return result;
+        if(sublist_count == 0 ) {
+            free(result);
+            return blok_obj_from_list(tmp);
+        } else {
+            result = blok_list_append(result, blok_obj_from_list(tmp));
+            return blok_obj_from_list(result);
+        }
     } else if(ch == '"') {
         return blok_reader_parse_string(fp);
     } else if(isalpha(ch)) {
@@ -870,14 +930,14 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
 }
 
 blok_Obj blok_reader_read_file(FILE * fp) {
-    blok_Obj result = blok_make_list(8);
-    blok_list_append(&result, blok_make_symbol("progn"));
+    blok_List * result = blok_list_allocate(8);
+    result = blok_list_append(result, blok_make_symbol("progn"));
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        blok_list_append(&result, blok_reader_parse_obj(fp));
+        result = blok_list_append(result, blok_reader_parse_obj(fp));
         blok_reader_skip_whitespace(fp);
     }
-    return result;
+    return blok_obj_from_list(result);
 }
 
 
@@ -927,6 +987,7 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
             {
                 assert(argc > 2);
                 blok_Symbol * name = blok_symbol_from_obj(argv[0]);
+                (void)name;
                 blok_Obj params = argv[1];
                 if(params.tag != BLOK_TAG_LIST) {
                     fatal_error(NULL,
@@ -934,8 +995,9 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
                             blok_char_ptr_from_tag(params.tag));
                 }
                 /*TODO get list of statements in body*/
-                blok_table_set(&env->globals, *name,
-                               blok_make_function());
+                fatal_error(NULL, "TODO");
+                /*blok_table_set(&env->globals, *name,
+                               blok_make_function());*/
 
             }
         default:
@@ -1008,6 +1070,18 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
 
     return blok_make_nil();
 }
+
+
+/* TODO
+ * add support for the sub-list operator (,)
+ *   -splits a list into multiple sub-lists
+ *   -ie, (1 2 3, 4 5 6) -> ((1 2 3)(4 5 6))
+ *
+ *
+ *
+ * change lists to stop using flexible array members,
+ *    -this causes problems when reallocating the struct
+ */
 
 
 int main(void) {

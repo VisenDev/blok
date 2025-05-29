@@ -2,7 +2,7 @@ ERRORS=3
 MAX_ERRORS_GCC= "--max-errors=${ERRORS}"
 MAX_ERRORS_CLANG= "-ferror-limit=${ERRORS}"
 SRC= c23.c
-STD= c11
+STD= c23
 
 
 c23: ${SRC} Makefile

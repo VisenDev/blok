@@ -5,4 +5,6 @@
   (print "\t" "hi")
   (print 1 "\n")
   (print 2)
-  (print 3))
+  (print 3 4, 5 6))
+
+
