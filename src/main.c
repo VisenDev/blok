@@ -61,9 +61,11 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
 }
 
 typedef struct {
-    void * ptr;
-    int32_t data;
-    uint8_t tag; 
+    blok_Tag tag; 
+    union {
+        void * ptr;
+        int data;
+    } as;
 } blok_Obj;
 
 typedef struct { 
@@ -104,7 +106,19 @@ typedef struct {
     //TODO figure out return types
 } blok_Function;
 
+typedef enum {
+    BLOK_TYPE_INT,
+    BLOK_TYPE_FLOAT,
+    BLOK_TYPE_BOOL,
+} blok_TypeTag;
 
+typedef struct {
+    blok_TypeTag tag;
+    union {
+        bool is_signed;
+        blok_Table structfields;
+    } as;
+} blok_Type;
 
 typedef struct { 
     blok_Table globals;
@@ -132,7 +146,7 @@ blok_Obj blok_obj_allocate(char tag, int32_t bytes) {
     char * mem = malloc(bytes);
     memset(mem, 0, bytes);
     blok_Obj result = {0};
-    result.ptr = mem;
+    result.as.ptr = mem;
     result.tag = tag;
     return result;
 }
@@ -143,7 +157,7 @@ void * blok_obj_extract_ptr(blok_Obj obj) {
                   "contain a ptr");
     }
     obj.tag = 0;
-    return obj.ptr;
+    return obj.as.ptr;
 }
 
 blok_Symbol blok_symbol_from_char_ptr(const char * ptr) {
@@ -159,27 +173,25 @@ blok_Symbol * blok_symbol_allocate(void) {
 }
 
 blok_Obj blok_make_int(int32_t data) {
-    return (blok_Obj){.tag = BLOK_TAG_INT, .data = data};
+    return (blok_Obj){.tag = BLOK_TAG_INT, .as.data = data};
 }
 blok_Obj blok_make_primitive(blok_Primitive data) {
-    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .data = data};
+    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
 }
 blok_Obj blok_make_nil(void) {
-    return (blok_Obj){0};
+    return (blok_Obj){.tag = BLOK_TAG_NIL};
 }
 
 
 blok_Obj blok_make_function(blok_Obj params, blok_Obj body) {
-    blok_Obj result = blok_obj_allocate(BLOK_TAG_FUNCTION, sizeof(blok_Function));
-    blok_Function * fn = blok_obj_extract_ptr(result);
-    fn->params = params;
-    fn->body = body;
-    return result;
+    (void) params;
+    (void) body;
+    return blok_make_nil();
 }
 
 
 blok_List * blok_list_allocate(int32_t initial_capacity) {
-    printf("allocating new list\n"); fflush(stdout);
+    /*printf("allocating new list\n"); fflush(stdout);*/
     blok_List * result = malloc(sizeof(blok_List));
     assert(result != NULL);
     result->len = 0;
@@ -210,7 +222,7 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
     assert(((uintptr_t)ptr& 0xf) == 0);
     blok_Obj obj = {0};
-    obj.ptr = ptr;
+    obj.as.ptr = ptr;
     obj.tag = tag;
     return obj;
 }
@@ -242,7 +254,7 @@ blok_Obj blok_make_symbol(const char * str) {
     blok_Symbol * sym = malloc(sizeof(blok_Symbol));
     strncpy(sym->buf, str, BLOK_SYMBOL_MAX_LEN - 1);
     blok_Obj result = {0};
-    result.ptr = sym;
+    result.as.ptr = sym;
     result.tag = BLOK_TAG_SYMBOL;
     return result;
 }
@@ -250,32 +262,32 @@ blok_Obj blok_make_symbol(const char * str) {
 blok_List * blok_list_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_LIST);
     obj.tag = 0;
-    return (blok_List *) obj.ptr;
+    return (blok_List *) obj.as.ptr;
 }
 
 blok_String * blok_string_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_STRING);
     obj.tag = 0;
-    return (blok_String *) obj.ptr;
+    return (blok_String *) obj.as.ptr;
 }
 
 blok_Symbol * blok_symbol_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_SYMBOL);
     obj.tag = 0;
-    return (blok_Symbol *) obj.ptr;
+    return (blok_Symbol *) obj.as.ptr;
 }
 
 
 blok_KeyValue * blok_keyvalue_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_KEYVALUE);
     obj.tag = 0;
-    return (blok_KeyValue *) obj.ptr;
+    return (blok_KeyValue *) obj.as.ptr;
 }
 
 blok_Table * blok_table_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_TABLE);
     obj.tag = 0;
-    return (blok_Table *) obj.ptr;
+    return (blok_Table *) obj.as.ptr;
 }
 
 bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
@@ -297,7 +309,7 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
     } else {
         switch(lhs.tag) {
             case BLOK_TAG_INT:
-                return lhs.data == rhs.data;
+                return lhs.as.data == rhs.as.data;
             case BLOK_TAG_NIL:
                 return true;
             case BLOK_TAG_STRING:
@@ -391,7 +403,7 @@ blok_Obj blok_make_table(int32_t size) {
     blok_Obj result = blok_obj_allocate(BLOK_TAG_TABLE, sizeof(blok_Table));
     blok_Table * ptr = blok_obj_extract_ptr(result);
     *ptr = blok_table_init_capacity(size);
-    result.ptr = ptr;
+    result.as.ptr = ptr;
     return result;
 }
 
@@ -567,7 +579,7 @@ void blok_table_run_tests(void) {
     blok_Obj *value =
         blok_table_get(&table, blok_symbol_from_char_ptr("hello"));
     assert(value);
-    assert(value->data == 10);
+    assert(value->as.data == 10);
     assert(table.cap == 16);
     assert(table.count == 1);
     assert(table.iterate_i == 0);
@@ -668,10 +680,10 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
             printf("nil");
             break;
         case BLOK_TAG_INT:
-            printf("%d", obj.data);
+            printf("%d", obj.as.data);
             break;
         case BLOK_TAG_PRIMITIVE:
-            printf("<Primitive %d>", obj.data);
+            printf("<Primitive %d>", obj.as.data);
             break;
         case BLOK_TAG_LIST:
             {
@@ -1026,7 +1038,7 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
     }
     blok_Obj fn = blok_evaluator_eval(env, list->items[0]);
     if(fn.tag == BLOK_TAG_PRIMITIVE) {
-        return blok_evaluator_apply_primitive(env, fn.data, list->len - 1, &list->items[1]);
+        return blok_evaluator_apply_primitive(env, fn.as.data, list->len - 1, &list->items[1]);
     } else if(fn.tag == BLOK_TAG_FUNCTION) {
         fatal_error(NULL, "TODO implement functions");
     } else {
@@ -1049,7 +1061,7 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
         case BLOK_TAG_SYMBOL:
             {
 
-                assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
+                assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
                 blok_Symbol direct = *sym;
                 blok_Obj * value = blok_state_lookup(env, direct);
@@ -1099,8 +1111,8 @@ int main(void) {
 
     blok_State env = blok_state_init();
     printf("\n\n");
-    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
-    assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
 
     blok_evaluator_eval(&env, source);
 
