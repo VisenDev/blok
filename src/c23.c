@@ -73,7 +73,7 @@ typedef union {
 typedef struct { 
     int32_t len;
     int32_t cap;
-    blok_Obj items[];
+    blok_Obj * items;
 } blok_List;
 
 typedef struct {
@@ -181,14 +181,20 @@ blok_Obj blok_make_function(blok_Obj params, blok_Obj body) {
 
 
 blok_List * blok_list_allocate(int32_t initial_capacity) {
-    const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
-    blok_List * l = malloc(size);
-    memset(l, 0, size);
-    l->cap = initial_capacity;
-    l->len = 0;
-    return l;
+    printf("allocating new list\n"); fflush(stdout);
+    blok_List * result = malloc(sizeof(blok_List));
+    assert(result != NULL);
+    result->len = 0;
+    result->cap = initial_capacity;
+    result->items = malloc(result->cap * sizeof(blok_Obj));
+    assert(result->items != NULL);
+    return result;
 }
 
+void blok_list_free(blok_List * l) {
+    free(l->items);
+    free(l);
+}
 
 /*
 =======
@@ -336,15 +342,12 @@ bool blok_symbol_empty(blok_Symbol sym) {
 
 void blok_obj_free(blok_Obj obj);
 
-[[nodiscard]]
-blok_List * blok_list_append(blok_List* l, blok_Obj item) {
-    /*blok_List * l = blok_list_from_obj(*list);*/
+void blok_list_append(blok_List* l, blok_Obj item) {
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        l = realloc(l, sizeof(blok_List) + l->cap * sizeof(blok_Obj));
+        l->items = realloc(l->items, l->cap * sizeof(blok_Obj));
     }
     l->items[l->len++] = item;
-    return l;
 }
 
 void blok_string_append(blok_Obj str, char ch) {
@@ -714,7 +717,7 @@ blok_Obj blok_obj_copy(blok_Obj obj);
 blok_List * blok_list_copy(blok_List const * const list) {
     blok_List * result = blok_list_allocate(list->len);
     for(int32_t i = 0; i < list->len; ++i) {
-        result = blok_list_append(result, blok_obj_copy(list->items[i]));
+        blok_list_append(result, blok_obj_copy(list->items[i]));
     }
     return result;
 }
@@ -903,11 +906,12 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
         blok_reader_skip_whitespace(fp);
         while(blok_reader_peek(fp) != ')' && !feof(fp)) {
             if(blok_reader_peek(fp) == ',') {
-                result = blok_list_append(result, blok_obj_from_list(tmp));
+                fgetc(fp);
+                blok_list_append(result, blok_obj_from_list(tmp));
                 tmp = blok_list_allocate(8);
                 ++sublist_count;
             } else {
-                result = blok_list_append(tmp, blok_reader_parse_obj(fp));
+                blok_list_append(tmp, blok_reader_parse_obj(fp));
                 blok_reader_skip_whitespace(fp);
             }
         }
@@ -919,7 +923,7 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
             free(result);
             return blok_obj_from_list(tmp);
         } else {
-            result = blok_list_append(result, blok_obj_from_list(tmp));
+            blok_list_append(result, blok_obj_from_list(tmp));
             return blok_obj_from_list(result);
         }
     } else if(ch == '"') {
@@ -934,10 +938,10 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
 
 blok_Obj blok_reader_read_file(FILE * fp) {
     blok_List * result = blok_list_allocate(8);
-    result = blok_list_append(result, blok_make_symbol("progn"));
+    blok_list_append(result, blok_make_symbol("progn"));
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        result = blok_list_append(result, blok_reader_parse_obj(fp));
+        blok_list_append(result, blok_reader_parse_obj(fp));
         blok_reader_skip_whitespace(fp);
     }
     return blok_obj_from_list(result);
