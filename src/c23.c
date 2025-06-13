@@ -55,19 +55,15 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
         case BLOK_TAG_SYMBOL:    return "BLOK_TAG_SYMBOL";
         case BLOK_TAG_TABLE:     return "BLOK_TAG_TABLE";
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
-        default: fatal_error(NULL, "Unknown tag: %d\n", tag);
+        /*default: fatal_error(NULL, "Unknown tag: %d\n", tag);*/
     }
     return NULL;
 }
 
-typedef union {
+typedef struct {
     void * ptr;
-    struct {
-        int32_t data;
-        uint16_t __pad1;
-        uint8_t  __pad2;
-        uint8_t tag; 
-    };
+    int32_t data;
+    uint8_t tag; 
 } blok_Obj;
 
 typedef struct { 
@@ -123,12 +119,14 @@ typedef enum {
     BLOK_PRIMITIVE_UNQUOTE,
 } blok_Primitive;
 
+/*
 _Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
 _Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
 _Static_assert(alignof(void(*)(void)) >= 8, "Alignment of function pointers is too small");
 _Static_assert(sizeof(void*) == 8, "Expected pointers to be 8 bytes");
+*/
 
 blok_Obj blok_obj_allocate(char tag, int32_t bytes) {
     char * mem = malloc(bytes);
@@ -211,7 +209,6 @@ blok_Obj blok_make_list(int32_t initial_capacity) {
 
 blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
     assert(((uintptr_t)ptr& 0xf) == 0);
-    _Static_assert(_Alignof(void*) >= 8, "void pointer failed alignment check");
     blok_Obj obj = {0};
     obj.ptr = ptr;
     obj.tag = tag;

@@ -2,7 +2,7 @@ ERRORS=3
 MAX_ERRORS_GCC= "--max-errors=${ERRORS}"
 MAX_ERRORS_CLANG= "-ferror-limit=${ERRORS}"
 SRC= c23.c
-STD= c23
+STD= c99
 
 
 c23: ${SRC} Makefile
@@ -11,8 +11,8 @@ c23: ${SRC} Makefile
 run: c23
 	./c23
 
-clean:
-	trash *.dSYM a.out c23
+clean: 
+	trash -f a.out c23 *.dSYM
 
 .PHONY run clean c23:
 #a.out: lisp.c
