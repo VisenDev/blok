@@ -11,8 +11,8 @@ c23: ${SRC} Makefile
 run: c23
 	./c23
 
-clean:
-	trash *.dSYM a.out c23
+clean: 
+	trash -f a.out c23 *.dSYM
 
 .PHONY run clean c23:
 #a.out: lisp.c
