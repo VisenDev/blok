@@ -127,10 +127,9 @@ typedef struct {
 typedef enum {
     BLOK_PRIMITIVE_PRINT,
     BLOK_PRIMITIVE_PROGN,
-    BLOK_PRIMITIVE_SET,
-    BLOK_PRIMITIVE_DEFUN,
+    //BLOK_PRIMITIVE_SET,
+    BLOK_PRIMITIVE_FN,
     BLOK_PRIMITIVE_QUOTE,
-    BLOK_PRIMITIVE_UNQUOTE,
 } blok_Primitive;
 
 /*
@@ -618,13 +617,12 @@ void blok_obj_free(blok_Obj obj) {
         case BLOK_TAG_KEYVALUE:
             blok_obj_free(blok_keyvalue_from_obj(obj)->value);
             free(blok_keyvalue_from_obj(obj));
+        case BLOK_TAG_FUNCTION:
+            fatal_error(NULL, "TODO: implement function freeing");
         case BLOK_TAG_INT:
         case BLOK_TAG_NIL:
         case BLOK_TAG_PRIMITIVE:
             /*No freeing needed for these types*/
-            break;
-        default:
-            fatal_error(NULL, "Tag cannot be freed");
             break;
     }
 }
@@ -959,35 +957,42 @@ blok_Obj blok_reader_read_file(FILE * fp) {
 
 
 blok_State blok_state_init(void) {
-    blok_State env = {0};
-    blok_table_set(&env.globals, blok_symbol_from_char_ptr("print"),
+    blok_State b = {0};
+    blok_table_set(&b.globals, blok_symbol_from_char_ptr("print"),
                    blok_make_primitive(BLOK_PRIMITIVE_PRINT));
-    blok_table_set(&env.globals, blok_symbol_from_char_ptr("progn"),
+    blok_table_set(&b.globals, blok_symbol_from_char_ptr("progn"),
                    blok_make_primitive(BLOK_PRIMITIVE_PROGN));
-    blok_table_print(&env.globals, BLOK_STYLE_AESTHETIC);
+    blok_table_set(&b.globals, blok_symbol_from_char_ptr("fn"),
+                   blok_make_primitive(BLOK_PRIMITIVE_FN));
+    blok_table_print(&b.globals, BLOK_STYLE_AESTHETIC);
     fflush(stdout);
-    return env;
+    return b;
 }
 
 
-void blok_state_deinit(blok_State * env) {
-    blok_table_empty(&env->globals);
+void blok_state_deinit(blok_State * b) {
+    blok_table_empty(&b->globals);
 }
 
-blok_Obj * blok_state_lookup(blok_State * env, blok_Symbol sym) {
-    return blok_table_get(&env->globals, sym);
+blok_Obj * blok_state_lookup(blok_State * b, blok_Symbol sym) {
+    return blok_table_get(&b->globals, sym);
 }
 
 
-blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj);
+blok_Obj blok_evaluator_eval(blok_State * b, blok_Obj obj);
 
-blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
+typedef struct blok_Env {
+    struct blok_Env * parent;
+    blok_Table locals;
+} blok_Env;
+
+blok_Obj blok_evaluator_apply_primitive(blok_State *b, blok_Primitive prim,
                                         int32_t argc, blok_Obj *argv) {
     switch(prim) {
         case BLOK_PRIMITIVE_PRINT:
             if(argc > 0) {
-                blok_obj_print(blok_evaluator_eval(env, argv[0]), BLOK_STYLE_AESTHETIC); 
-                blok_evaluator_apply_primitive(env, prim, argc - 1, ++argv);
+                blok_obj_print(blok_evaluator_eval(b, argv[0]), BLOK_STYLE_AESTHETIC); 
+                blok_evaluator_apply_primitive(b, prim, argc - 1, ++argv);
             }
             break;
         case BLOK_PRIMITIVE_PROGN:
@@ -995,38 +1000,50 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *env, blok_Primitive prim,
                 blok_Obj result = blok_make_nil();
                 for(int32_t i = 0; i < argc; ++i) {
                     /*blok_obj_free(result);*/
-                    result = blok_evaluator_eval(env, argv[i]);
+                    result = blok_evaluator_eval(b, argv[i]);
                 }
                 return result;
             }
-        case BLOK_PRIMITIVE_DEFUN:
+        case BLOK_PRIMITIVE_QUOTE:
+            assert(argc <= 1);
+            return argv[0];
+        case BLOK_PRIMITIVE_FN:
             {
-                assert(argc > 2);
-                blok_Symbol * name = blok_symbol_from_obj(argv[0]);
-                (void)name;
-                blok_Obj params = argv[1];
-                if(params.tag != BLOK_TAG_LIST) {
-                    fatal_error(NULL,
-                            "Expected parameters to be a list, found %s",
-                            blok_char_ptr_from_tag(params.tag));
-                }
-                /*TODO get list of statements in body*/
-                fatal_error(NULL, "TODO");
-                /*blok_table_set(&env->globals, *name,
-                               blok_make_function());*/
+                assert(argc >= 4);
+                blok_Obj return_type = blok_evaluator_eval(b, argv[0]);
+                blok_Obj name = argv[1];
+                blok_Obj params = argv[2];
+                blok_Obj body = blok_list_allocate(4);
+                blok_Obj * bodyv = &argv[3];
+                int bodyc = argc - 3;
+
+                /*TODO, do typechecking of calls in the body*/
+
+                //assert(argc > 2);
+                //blok_Symbol * return_type = blok_symbol_from_obj(argv[0]);
+                //printf("FN first return type %s\n", return_type->buf);
+                //blok_Symbol * return_type = blok_symbol_from_obj(argv[0]);
+                //printf("FN first return type %s\n", return_type->buf);
+                //blok_Obj params = argv[1];
+                //if(params.tag != BLOK_TAG_LIST) {
+                //    fatal_error(NULL,
+                //            "Expected parameters to be a list, found %s",
+                //            blok_char_ptr_from_tag(params.tag));
+                //}
+                ///*TODO get list of statements in body*/
+                //fatal_error(NULL, "TODO");
+                ///*blok_table_set(&b->globals, *name,
+                //               blok_make_function());*/
 
             }
-        default:
-            fatal_error(NULL, "Unknown primitive");
-            break;
     }
 
     return blok_make_nil();
 }
 
-blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
+blok_Obj blok_evaluator_apply_list(blok_State * b, blok_List * list) {
     /*
-    (void)env;
+    (void)b;
     (void)sym;
     (void)argc;
     (void)argv;
@@ -1036,23 +1053,25 @@ blok_Obj blok_evaluator_apply_list(blok_State * env, blok_List * list) {
     if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
-    blok_Obj fn = blok_evaluator_eval(env, list->items[0]);
+    blok_Obj fn = blok_evaluator_eval(b, list->items[0]);
     if(fn.tag == BLOK_TAG_PRIMITIVE) {
-        return blok_evaluator_apply_primitive(env, fn.as.data, list->len - 1, &list->items[1]);
+        return blok_evaluator_apply_primitive(b, fn.as.data, list->len - 1, &list->items[1]);
     } else if(fn.tag == BLOK_TAG_FUNCTION) {
         fatal_error(NULL, "TODO implement functions");
     } else {
-        printf("Found this value assigned to the symbol: ");
+        printf("\n\nEvaluated ");
+        blok_obj_print(list->items[0], BLOK_STYLE_CODE);
+        printf(" into ");
         blok_obj_print(fn, BLOK_STYLE_CODE);
-        puts("");
-        fatal_error(NULL, "Value to be applied is not applyable");
+        puts("\"");
+        fatal_error(NULL, "Note, this value cannot be applied");
     }
 
     return blok_make_nil();
 }
 
-blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
-    (void)env;
+blok_Obj blok_evaluator_eval(blok_State * b, blok_Obj obj) {
+    (void)b;
     switch(obj.tag) {
         case BLOK_TAG_NIL:
         case BLOK_TAG_INT:
@@ -1061,10 +1080,10 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
         case BLOK_TAG_SYMBOL:
             {
 
-                assert(blok_state_lookup(env, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
+                assert(blok_state_lookup(b, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
                 blok_Symbol direct = *sym;
-                blok_Obj * value = blok_state_lookup(env, direct);
+                blok_Obj * value = blok_state_lookup(b, direct);
                 if(value == NULL) {
                     fatal_error(NULL, "tried to evaluate null symbol");
                 }
@@ -1073,7 +1092,7 @@ blok_Obj blok_evaluator_eval(blok_State * env, blok_Obj obj) {
         case BLOK_TAG_LIST:
             {
                 blok_List * list = blok_list_from_obj(obj);
-                return blok_evaluator_apply_list(env, list);
+                return blok_evaluator_apply_list(b, list);
             }
         default:
           fatal_error(NULL,
@@ -1109,14 +1128,14 @@ int main(void) {
     blok_obj_print(source, BLOK_STYLE_CODE);
     printf("\n\n");
 
-    blok_State env = blok_state_init();
+    blok_State b = blok_state_init();
     printf("\n\n");
-    assert(blok_table_get(&env.globals, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
-    assert(blok_state_lookup(&env, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_table_get(&b.globals, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
+    assert(blok_state_lookup(&b, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
 
-    blok_evaluator_eval(&env, source);
+    blok_evaluator_eval(&b, source);
 
-    blok_state_deinit(&env);
+    blok_state_deinit(&b);
     blok_obj_free(source);
     fclose(fp);
     return 0;

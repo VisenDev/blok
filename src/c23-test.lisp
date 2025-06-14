@@ -4,12 +4,12 @@
 (progn 
   (print "\t" "hi")
   (print 1 "\n")
-  (print 2)
-  (print 3 4, 5 6))
+  (print 2))
 
-
-(fn int main ()
+(fn int sayhello ()
   (print "hello")
-  (return 0)
+  (print "hello")
   )
+
+(sayhello)
 
