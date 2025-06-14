@@ -1175,7 +1175,7 @@ int main(void) {
     /*testing*/
     blok_table_run_tests();
 
-    FILE * fp = fopen("c23-test.lisp", "r");
+    FILE * fp = fopen("test.lisp", "r");
     blok_Obj source = blok_reader_read_file(fp);
     blok_obj_print(source, BLOK_STYLE_CODE);
     printf("\n\n");
