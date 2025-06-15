@@ -41,6 +41,11 @@ typedef enum {
     BLOK_TAG_FUNCTION,
     BLOK_TAG_TRUE,
     BLOK_TAG_FALSE,
+
+    /*
+     * special tag for return types: (can accept any type)
+     */
+    BLOK_TAG_ANY = -1,
 } blok_Tag;
 
 
@@ -58,6 +63,7 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
         case BLOK_TAG_TRUE:      return "BLOK_TAG_TRUE";
         case BLOK_TAG_FALSE:     return "BLOK_TAG_FALSE";
+        case BLOK_TAG_ANY:       return "BLOK_TAG_ANY";
     }
 }
 
@@ -107,25 +113,21 @@ typedef struct {
     //TODO figure out return types
 } blok_Function;
 
-typedef enum {
-    BLOK_TYPE_INT,
-    BLOK_TYPE_FLOAT,
-    BLOK_TYPE_BOOL,
-} blok_TypeTag;
-
-typedef struct {
-    blok_TypeTag tag;
-    union {
-        bool is_signed;
-        blok_Table structfields;
-    } as;
-} blok_Type;
-
 typedef struct blok_State { 
     struct blok_State * parent;
     blok_Table bindings;
 } blok_State; 
 
+
+#define BLOK_PARAMETER_COUNT_MAX 8
+typedef struct {
+    bool variadic; 
+    blok_Tag return_type;
+    blok_Tag params[BLOK_PARAMETER_COUNT_MAX];
+    int32_t param_count;
+} blok_FunctionSignature;
+
+/* TODO, make the contents of a file and a progn different primitives*/
 typedef enum {
     BLOK_PRIMITIVE_PRINT,
     BLOK_PRIMITIVE_PROGN,
@@ -141,16 +143,62 @@ typedef enum {
     BLOK_PRIMITIVE_LTE,
     BLOK_PRIMITIVE_GT,
     BLOK_PRIMITIVE_GTE,
+} blok_PrimitiveTag;
+
+typedef struct {
+    blok_PrimitiveTag tag;
+    blok_FunctionSignature signature;   
 } blok_Primitive;
 
-/*
-_Static_assert(sizeof(blok_Obj) == 8, "blok_Obj should be 64 bits");
-_Static_assert(alignof(void*) >= 8, "Alignment of pointers is too small");
-_Static_assert(alignof(blok_List *) >= 8, "Alignment of pointers is too small");
-_Static_assert(alignof(blok_Obj *) >= 8, "Alignment of pointers is too small");
-_Static_assert(alignof(void(*)(void)) >= 8, "Alignment of function pointers is too small");
-_Static_assert(sizeof(void*) == 8, "Expected pointers to be 8 bytes");
-*/
+const blok_Primitive blok_primitive_print = (blok_Primitive){
+    .tag = BLOK_PRIMITIVE_PRINT,
+    .signature = (blok_FunctionSignature){
+        .variadic = true,
+        .return_type = BLOK_TAG_NIL,
+    }
+};
+const blok_Primitive blok_primitive_progn = (blok_Primitive){
+    .tag = BLOK_PRIMITIVE_PROGN,
+    .signature = (blok_FunctionSignature){
+        .variadic = true,
+        .return_type = BLOK_TAG_ANY,
+    }
+};
+const blok_Primitive blok_primitive_set = (blok_Primitive){
+    .tag = BLOK_PRIMITIVE_SET,
+    .signature = (blok_FunctionSignature){
+        .params = {BLOK_TAG_SYMBOL, BLOK_TAG_ANY},
+        .param_count = 2,
+        .return_type = BLOK_TAG_ANY,
+    }
+};
+const blok_Primitive blok_primitive_defun = (blok_Primitive){
+    .tag = BLOK_PRIMITIVE_DEFUN,
+    .signature = (blok_FunctionSignature){
+        .variadic = true,
+        .params = {BLOK_TAG_SYMBOL, BLOK_TAG_LIST},
+        .param_count = 2,
+        .return_type = BLOK_TAG_NIL,
+    }
+};
+const blok_Primitive blok_primitive_quote = (blok_Primitive){
+    .tag = BLOK_PRIMITIVE_QUOTE,
+    .signature = (blok_FunctionSignature){
+        .params = {BLOK_TAG_ANY},
+        .param_count = 1,
+        .return_type = BLOK_TAG_ANY,
+    }
+};
+const blok_Primitive blok_primitive_list = (blok_Primitive
+
+    BLOK_PRIMITIVE_LIST,
+    BLOK_PRIMITIVE_WHEN,
+    BLOK_PRIMITIVE_NOT,
+    BLOK_PRIMITIVE_EQUAL,
+    BLOK_PRIMITIVE_AND,
+    BLOK_PRIMITIVE_LT,
+    BLOK_PRIMITIVE_LTE,
+    BLOK_PRIMITIVE_GT,
 
 blok_Obj blok_obj_allocate(blok_Tag tag, int32_t bytes) {
     char * mem = malloc(bytes);
