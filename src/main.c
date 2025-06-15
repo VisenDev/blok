@@ -39,12 +39,13 @@ typedef enum {
     BLOK_TAG_SYMBOL,
     BLOK_TAG_TABLE,
     BLOK_TAG_FUNCTION,
+    BLOK_TAG_TRUE,
+    BLOK_TAG_FALSE,
 } blok_Tag;
 
 
 const char * blok_char_ptr_from_tag(blok_Tag tag) {
 
-    /*TODO return a string of the tag*/
     switch(tag) {
         case BLOK_TAG_NIL:       return "BLOK_TAG_NIL";
         case BLOK_TAG_INT:       return "BLOK_TAG_INT";
@@ -55,9 +56,9 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
         case BLOK_TAG_SYMBOL:    return "BLOK_TAG_SYMBOL";
         case BLOK_TAG_TABLE:     return "BLOK_TAG_TABLE";
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
-        /*default: fatal_error(NULL, "Unknown tag: %d\n", tag);*/
+        case BLOK_TAG_TRUE:      return "BLOK_TAG_TRUE";
+        case BLOK_TAG_FALSE:     return "BLOK_TAG_FALSE";
     }
-    return NULL;
 }
 
 typedef struct {
@@ -128,10 +129,18 @@ typedef struct blok_State {
 typedef enum {
     BLOK_PRIMITIVE_PRINT,
     BLOK_PRIMITIVE_PROGN,
-    //BLOK_PRIMITIVE_SET,
+    BLOK_PRIMITIVE_SET,
     BLOK_PRIMITIVE_DEFUN,
     BLOK_PRIMITIVE_QUOTE,
     BLOK_PRIMITIVE_LIST,
+    BLOK_PRIMITIVE_WHEN,
+    BLOK_PRIMITIVE_NOT,
+    BLOK_PRIMITIVE_EQUAL,
+    BLOK_PRIMITIVE_AND,
+    BLOK_PRIMITIVE_LT,
+    BLOK_PRIMITIVE_LTE,
+    BLOK_PRIMITIVE_GT,
+    BLOK_PRIMITIVE_GTE,
 } blok_Primitive;
 
 /*
@@ -194,6 +203,12 @@ blok_Obj blok_make_primitive(blok_Primitive data) {
 }
 blok_Obj blok_make_nil(void) {
     return (blok_Obj){.tag = BLOK_TAG_NIL};
+}
+blok_Obj blok_make_true(void) {
+    return (blok_Obj){.tag = BLOK_TAG_TRUE};
+}
+blok_Obj blok_make_false(void) {
+    return (blok_Obj){.tag = BLOK_TAG_FALSE};
 }
 
 
@@ -635,6 +650,8 @@ void blok_obj_free(blok_Obj obj) {
                 blok_list_free(fn->params);
                 free(fn);
             }
+        case BLOK_TAG_TRUE:
+        case BLOK_TAG_FALSE:
         case BLOK_TAG_INT:
         case BLOK_TAG_NIL:
         case BLOK_TAG_PRIMITIVE:
@@ -997,6 +1014,14 @@ blok_State blok_state_init(void) {
                    blok_make_primitive(BLOK_PRIMITIVE_LIST));
     blok_state_bind(&b, blok_symbol_from_char_ptr("quote"),
                    blok_make_primitive(BLOK_PRIMITIVE_QUOTE));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("true"),
+                   (blok_Obj){.tag = BLOK_TAG_TRUE});
+    blok_state_bind(&b, blok_symbol_from_char_ptr("false"),
+                   (blok_Obj){.tag = BLOK_TAG_FALSE});
+    blok_state_bind(&b, blok_symbol_from_char_ptr("when"),
+                   blok_make_primitive(BLOK_PRIMITIVE_WHEN));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("equal"),
+                   blok_make_primitive(BLOK_PRIMITIVE_EQUAL));
     return b;
 }
 
@@ -1039,7 +1064,7 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *b, blok_Primitive prim,
             {
                 blok_Obj result = blok_make_nil();
                 for(int32_t i = 0; i < argc; ++i) {
-                    /*blok_obj_free(result);*/
+                    blok_obj_free(result);
                     result = blok_evaluator_eval(b, argv[i]);
                 }
                 return result;
@@ -1069,24 +1094,38 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *b, blok_Primitive prim,
                 return blok_make_nil();
 
                 /*TODO, do typechecking of calls in the body*/
-
-                //assert(argc > 2);
-                //blok_Symbol * return_type = blok_symbol_from_obj(argv[0]);
-                //printf("FN first return type %s\n", return_type->buf);
-                //blok_Symbol * return_type = blok_symbol_from_obj(argv[0]);
-                //printf("FN first return type %s\n", return_type->buf);
-                //blok_Obj params = argv[1];
-                //if(params.tag != BLOK_TAG_LIST) {
-                //    fatal_error(NULL,
-                //            "Expected parameters to be a list, found %s",
-                //            blok_char_ptr_from_tag(params.tag));
-                //}
-                ///*TODO get list of statements in body*/
-                //fatal_error(NULL, "TODO");
-                ///*blok_table_set(&b->globals, *name,
-                //               blok_make_function());*/
-
             }
+        case BLOK_PRIMITIVE_EQUAL:
+            assert(argc == 2);
+            return blok_obj_equal(blok_evaluator_eval(b, argv[0]),
+                                  blok_evaluator_eval(b, argv[1]))
+                       ? blok_make_true()
+                       : blok_make_false();
+        case BLOK_PRIMITIVE_WHEN:
+            assert(argc >= 2);
+            blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+            if(cond.tag == BLOK_TAG_TRUE) {
+                //printf("The when succeeded!"); fflush(stdout);
+                blok_Obj result = blok_make_nil();
+                for(int32_t i = 1; i < argc; ++i) {
+                    blok_obj_free(result);
+                    result = blok_evaluator_eval(b, argv[i]);
+                }
+                return result;
+            } else if (cond.tag == BLOK_TAG_FALSE) {
+                //printf("The when failed!"); fflush(stdout);
+                return blok_make_nil();
+            } else {
+                fatal_error(NULL, "Expected true or false");
+            }
+        case BLOK_PRIMITIVE_SET:
+            assert(argc == 2 && "Expects key then value");
+            blok_Symbol sym = *blok_symbol_from_obj(argv[0]);
+            blok_Obj * old = blok_state_lookup(b, sym);
+            if(old == NULL) {
+                fatal_error(NULL, "Undefined symbol: %s", sym.buf);
+            }
+            blok_state_bind(b, sym, blok_obj_copy(argv[1]));
     }
 
     return blok_make_nil();
@@ -1143,6 +1182,10 @@ blok_Obj blok_evaluator_eval(blok_State * b, blok_Obj obj) {
             }
         case BLOK_TAG_LIST:
             {
+                /*printf("-->Evaluating ");
+                blok_obj_print(obj, BLOK_STYLE_CODE);
+                printf("\n");*/
+                fflush(stdout);
                 blok_List * list = blok_list_from_obj(obj);
                 return blok_evaluator_apply_list(b, list);
             }
