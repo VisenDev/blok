@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arena.c"
+
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
         const long progress = ftell(fp);
@@ -232,20 +234,6 @@ void blok_list_free(blok_List * l) {
     free(l->items);
     free(l);
 }
-
-/*
-=======
-//TODO factor out this into multiple functions
-blok_Obj blok_make_list(int32_t initial_capacity) {
-    const int32_t size = (sizeof(blok_List) + sizeof(blok_Obj) * initial_capacity);
-    blok_List * list = malloc(size);
-    memset(list, 0, size);
-    blok_Obj result = {.ptr = list};
-    result.tag = BLOK_TAG_LIST;
-    return result;
-}
-*/
-
 
 blok_String * blok_string_allocate(uint64_t capacity) {
     blok_String * blok_str = malloc(sizeof(blok_String));
