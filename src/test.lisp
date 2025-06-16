@@ -26,14 +26,22 @@
   (when (equal 5 arg)
     (print "It is!")
     )
+  (when (not (equal 5 arg))
+    (print "It isn't :(")
+    )
   (print "\n")
   )
 
 (equal_to_5 4)
 (equal_to_5 5)
 
-(defun test_true ()
-  (when true
-    (print "it works!\n")
+(defun fib (num)
+  (if (lte num 1)
+    1
+    (mul (fib (sub 1 num)) num)
     )
   )
+
+(print (fib 5))
+
+(print "hello hello\n")

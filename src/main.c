@@ -41,11 +41,6 @@ typedef enum {
     BLOK_TAG_FUNCTION,
     BLOK_TAG_TRUE,
     BLOK_TAG_FALSE,
-
-    /*
-     * special tag for return types: (can accept any type)
-     */
-    BLOK_TAG_ANY = -1,
 } blok_Tag;
 
 
@@ -63,7 +58,6 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
         case BLOK_TAG_TRUE:      return "BLOK_TAG_TRUE";
         case BLOK_TAG_FALSE:     return "BLOK_TAG_FALSE";
-        case BLOK_TAG_ANY:       return "BLOK_TAG_ANY";
     }
 }
 
@@ -143,62 +137,14 @@ typedef enum {
     BLOK_PRIMITIVE_LTE,
     BLOK_PRIMITIVE_GT,
     BLOK_PRIMITIVE_GTE,
-} blok_PrimitiveTag;
-
-typedef struct {
-    blok_PrimitiveTag tag;
-    blok_FunctionSignature signature;   
+    BLOK_PRIMITIVE_ADD,
+    BLOK_PRIMITIVE_SUB,
+    BLOK_PRIMITIVE_MUL,
+    BLOK_PRIMITIVE_DIV,
+    BLOK_PRIMITIVE_IF,
+    BLOK_PRIMITIVE_UNLESS,
 } blok_Primitive;
 
-const blok_Primitive blok_primitive_print = (blok_Primitive){
-    .tag = BLOK_PRIMITIVE_PRINT,
-    .signature = (blok_FunctionSignature){
-        .variadic = true,
-        .return_type = BLOK_TAG_NIL,
-    }
-};
-const blok_Primitive blok_primitive_progn = (blok_Primitive){
-    .tag = BLOK_PRIMITIVE_PROGN,
-    .signature = (blok_FunctionSignature){
-        .variadic = true,
-        .return_type = BLOK_TAG_ANY,
-    }
-};
-const blok_Primitive blok_primitive_set = (blok_Primitive){
-    .tag = BLOK_PRIMITIVE_SET,
-    .signature = (blok_FunctionSignature){
-        .params = {BLOK_TAG_SYMBOL, BLOK_TAG_ANY},
-        .param_count = 2,
-        .return_type = BLOK_TAG_ANY,
-    }
-};
-const blok_Primitive blok_primitive_defun = (blok_Primitive){
-    .tag = BLOK_PRIMITIVE_DEFUN,
-    .signature = (blok_FunctionSignature){
-        .variadic = true,
-        .params = {BLOK_TAG_SYMBOL, BLOK_TAG_LIST},
-        .param_count = 2,
-        .return_type = BLOK_TAG_NIL,
-    }
-};
-const blok_Primitive blok_primitive_quote = (blok_Primitive){
-    .tag = BLOK_PRIMITIVE_QUOTE,
-    .signature = (blok_FunctionSignature){
-        .params = {BLOK_TAG_ANY},
-        .param_count = 1,
-        .return_type = BLOK_TAG_ANY,
-    }
-};
-const blok_Primitive blok_primitive_list = (blok_Primitive
-
-    BLOK_PRIMITIVE_LIST,
-    BLOK_PRIMITIVE_WHEN,
-    BLOK_PRIMITIVE_NOT,
-    BLOK_PRIMITIVE_EQUAL,
-    BLOK_PRIMITIVE_AND,
-    BLOK_PRIMITIVE_LT,
-    BLOK_PRIMITIVE_LTE,
-    BLOK_PRIMITIVE_GT,
 
 blok_Obj blok_obj_allocate(blok_Tag tag, int32_t bytes) {
     char * mem = malloc(bytes);
@@ -257,6 +203,9 @@ blok_Obj blok_make_true(void) {
 }
 blok_Obj blok_make_false(void) {
     return (blok_Obj){.tag = BLOK_TAG_FALSE};
+}
+blok_Obj blok_make_boolean(bool cond) {
+    return cond ? blok_make_true() : blok_make_false();
 }
 
 
@@ -1070,6 +1019,30 @@ blok_State blok_state_init(void) {
                    blok_make_primitive(BLOK_PRIMITIVE_WHEN));
     blok_state_bind(&b, blok_symbol_from_char_ptr("equal"),
                    blok_make_primitive(BLOK_PRIMITIVE_EQUAL));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("and"),
+                   blok_make_primitive(BLOK_PRIMITIVE_AND));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("lt"),
+                   blok_make_primitive(BLOK_PRIMITIVE_LT));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("gt"),
+                   blok_make_primitive(BLOK_PRIMITIVE_GT));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("lte"),
+                   blok_make_primitive(BLOK_PRIMITIVE_LTE));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("gte"),
+                   blok_make_primitive(BLOK_PRIMITIVE_GTE));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("not"),
+                   blok_make_primitive(BLOK_PRIMITIVE_NOT));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("add"),
+                   blok_make_primitive(BLOK_PRIMITIVE_ADD));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("sub"),
+                   blok_make_primitive(BLOK_PRIMITIVE_SUB));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("mul"),
+                   blok_make_primitive(BLOK_PRIMITIVE_MUL));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("div"),
+                   blok_make_primitive(BLOK_PRIMITIVE_DIV));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("unless"),
+                   blok_make_primitive(BLOK_PRIMITIVE_UNLESS));
+    blok_state_bind(&b, blok_symbol_from_char_ptr("if"),
+                   blok_make_primitive(BLOK_PRIMITIVE_IF));
     return b;
 }
 
@@ -1150,21 +1123,42 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *b, blok_Primitive prim,
                        ? blok_make_true()
                        : blok_make_false();
         case BLOK_PRIMITIVE_WHEN:
-            assert(argc >= 2);
-            blok_Obj cond = blok_evaluator_eval(b, argv[0]);
-            if(cond.tag == BLOK_TAG_TRUE) {
-                //printf("The when succeeded!"); fflush(stdout);
-                blok_Obj result = blok_make_nil();
-                for(int32_t i = 1; i < argc; ++i) {
-                    blok_obj_free(result);
-                    result = blok_evaluator_eval(b, argv[i]);
+            {
+                assert(argc >= 2);
+                blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+                if(cond.tag == BLOK_TAG_FALSE) {
+                    return blok_make_nil();
+                } else {
+                    blok_Obj result = blok_make_nil();
+                    for(int32_t i = 1; i < argc; ++i) {
+                        blok_obj_free(result);
+                        result = blok_evaluator_eval(b, argv[i]);
+                    }
+                    return result;
                 }
-                return result;
-            } else if (cond.tag == BLOK_TAG_FALSE) {
-                //printf("The when failed!"); fflush(stdout);
-                return blok_make_nil();
+            }
+        case BLOK_PRIMITIVE_UNLESS:
+            {
+                assert(argc >= 2);
+                blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+                if(cond.tag == BLOK_TAG_FALSE) {
+                    blok_Obj result = blok_make_nil();
+                    for(int32_t i = 1; i < argc; ++i) {
+                        blok_obj_free(result);
+                        result = blok_evaluator_eval(b, argv[i]);
+                    }
+                    return result;
+                } else {
+                    return blok_make_nil();
+                } 
+            }
+        case BLOK_PRIMITIVE_IF:
+            assert(argc >= 3);
+            blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+            if(cond.tag == BLOK_TAG_FALSE) {
+                return blok_evaluator_eval(b, argv[2]);
             } else {
-                fatal_error(NULL, "Expected true or false");
+                return blok_evaluator_eval(b, argv[1]);
             }
         case BLOK_PRIMITIVE_SET:
             assert(argc == 2 && "Expects key then value");
@@ -1174,6 +1168,62 @@ blok_Obj blok_evaluator_apply_primitive(blok_State *b, blok_Primitive prim,
                 fatal_error(NULL, "Undefined symbol: %s", sym.buf);
             }
             blok_state_bind(b, sym, blok_obj_copy(argv[1]));
+        case BLOK_PRIMITIVE_AND:
+            {
+                assert(argc == 2);
+                blok_Obj lhs = blok_evaluator_eval(b, argv[0]);
+                blok_Obj rhs = blok_evaluator_eval(b, argv[1]);
+                return blok_make_boolean(lhs.tag != BLOK_TAG_FALSE &&
+                                         rhs.tag != BLOK_TAG_FALSE);
+            }
+        case BLOK_PRIMITIVE_GT:
+            assert(argc == 2);
+            if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
+                fatal_error(NULL, "Cannot compare non-integer values");
+            }
+            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data >
+                                     blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_GTE:
+            assert(argc == 2);
+            if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
+                fatal_error(NULL, "Cannot compare non-integer values");
+            }
+            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data >=
+                                     blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_LT:
+            assert(argc == 2);
+            if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
+                fatal_error(NULL, "Cannot compare non-integer values");
+            }
+            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data <
+                                     blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_LTE:
+            assert(argc == 2);
+            if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
+                fatal_error(NULL, "Cannot compare non-integer values");
+            }
+            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data <
+                                     blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_NOT:
+            assert(argc == 1);
+            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
+                                                                   : false);
+        case BLOK_PRIMITIVE_ADD:
+            assert(argc == 2);
+            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data +
+                                 blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_SUB:
+            assert(argc == 2);
+            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data -
+                                 blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_MUL:
+            assert(argc == 2);
+            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data *
+                                 blok_evaluator_eval(b, argv[1]).as.data);
+        case BLOK_PRIMITIVE_DIV:
+            assert(argc == 2);
+            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data /
+                                 blok_evaluator_eval(b, argv[1]).as.data);
     }
 
     return blok_make_nil();
@@ -1249,21 +1299,7 @@ blok_Obj blok_evaluator_eval(blok_State * b, blok_Obj obj) {
     return blok_make_nil();
 }
 
-
-/* TODO
- * add support for the sub-list operator (,)
- *   -splits a list into multiple sub-lists
- *   -ie, (1 2 3, 4 5 6) -> ((1 2 3)(4 5 6))
- *
- *
- *
- * change lists to stop using flexible array members,
- *    -this causes problems when reallocating the struct
- */
-
-
 int main(void) {
-    /*testing*/
     blok_table_run_tests();
 
     FILE * fp = fopen("test.lisp", "r");
@@ -1281,14 +1317,3 @@ int main(void) {
     fclose(fp);
     return 0;
 }
-
-
-/*
-   blok_Obj c = blok_make_list(10);
-   blok_List * l = blok_list_from_obj(c);
-   l->len = 10;
-   l->items[2] = blok_make_int(1234);
-   l->items[8] = blok_make_string("hi there hello");
-   blok_print(c);
-   blok_obj_free(c);
-   */
