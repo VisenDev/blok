@@ -124,6 +124,9 @@ void * blok_scope_alloc(blok_Scope * b, size_t bytes) {
 void blok_scope_close(blok_Scope * b) {
     blok_arena_free(&b->arena);
 }
+void blok_scope_reclaim(blok_Scope * b, void * ptr) {
+    blok_arena_reclaim(&b->arena, ptr);
+}
 
 
 #define BLOK_PARAMETER_COUNT_MAX 8
@@ -173,8 +176,10 @@ blok_Obj blok_obj_allocate(blok_Scope * b, blok_Tag tag, int32_t bytes) {
 //TODO: finish fixing this function!
 void * blok_ptr_from_obj(blok_Obj obj) {
     if (obj.tag == BLOK_TAG_INT
-    ||  obj.tag == BLOK_TAG_NIL || BLOK_TAG_FALSE ||
-        BLOK_TAG_TRUE || BLOK_TAG_PRIMITIVE) {
+    ||  obj.tag == BLOK_TAG_NIL
+    ||  obj.tag == BLOK_TAG_FALSE
+    ||  obj.tag == BLOK_TAG_TRUE
+    ||  obj.tag == BLOK_TAG_PRIMITIVE) {
         fatal_error(NULL,
                 "You tried to get the pointer out of a type that does not "
                 "contain a ptr");
@@ -204,6 +209,7 @@ blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
 }
 
 blok_Obj blok_obj_from_list(blok_List * l) { return blok_obj_from_ptr(l, BLOK_TAG_LIST); }
+blok_Obj blok_obj_from_table(blok_Table * l) { return blok_obj_from_ptr(l, BLOK_TAG_TABLE); }
 blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
 blok_Obj blok_obj_from_symbol(blok_Symbol * s) { return blok_obj_from_ptr(s, BLOK_TAG_SYMBOL); }
 blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
@@ -364,9 +370,11 @@ bool blok_symbol_empty(blok_Symbol sym) {
     return sym.buf[0] == 0;
 }
 
+
 //void blok_obj_free(blok_Obj obj);
 
 void blok_list_append(blok_List* l, blok_Obj item) {
+    //TODO: copy items using the lists local scope
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
         l->items = realloc(l->items, l->cap * sizeof(blok_Obj));
@@ -402,24 +410,20 @@ int32_t blok_hash(blok_Symbol sym) {
     return blok_hash_char_ptr(sym.buf, (char*)memchr(sym.buf, 0, BLOK_SYMBOL_MAX_LEN) - sym.buf);
 }
 
-blok_Table blok_table_init_capacity(blok_Scope * b, int32_t cap) {
-    blok_Table table = {0};
+blok_Table * blok_table_allocate(blok_Scope * b, int32_t cap) {
+    blok_Table * table = blok_scope_alloc(b, sizeof(blok_Table));
     const uint64_t bytes = sizeof(blok_KeyValue) * cap;
-    table.items = blok_scope_alloc(b, bytes);
-    memset(table.items, 0, bytes);
-    table.count = 0;
-    table.iterate_i = 0;
-    table.cap = cap;
+    table->items = blok_scope_alloc(b, bytes);
+    memset(table->items, 0, bytes);
+    table->count = 0;
+    table->iterate_i = 0;
+    table->cap = cap;
     return table;
 }
 
 
-blok_Obj blok_make_table(blok_Scope * b, int32_t size) {
-    blok_Obj result = blok_obj_allocate(BLOK_TAG_TABLE, sizeof(blok_Table));
-    blok_Table * ptr = blok_obj_extract_ptr(result);
-    *ptr = blok_table_init_capacity(b, size);
-    result.as.ptr = ptr;
-    return result;
+blok_Obj blok_make_table(blok_Scope * b, int32_t cap) {
+    return blok_obj_from_table(blok_table_allocate(b, cap));
 }
 
 blok_KeyValue * blok_table_iterate_next(blok_Table * table) {
@@ -472,31 +476,34 @@ blok_KeyValue * blok_table_find_slot(blok_Scope * b, blok_Table * table, blok_Sy
     } while(1);
 }
 
-blok_Obj * blok_table_get(blok_Scope * b, blok_Table * table, blok_Symbol key) {
+blok_Obj blok_table_get(blok_Scope * b, blok_Table * table, blok_Symbol key) {
     blok_KeyValue * kv = blok_table_find_slot(b, table, key);
     if(kv == NULL) {
-        return NULL;
+        return blok_make_nil();
     } else if(blok_symbol_empty(kv->key)) {
-        return NULL;
+        return blok_make_nil();
     } else {
+        //TODO actually copy this value
         return &kv->value;
     }
 }
 
-blok_Obj blok_table_set(blok_Scope * b, blok_Table * table, blok_Symbol key, blok_Obj value);
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
 
-void blok_table_rehash(blok_Scope * b, blok_Table * table, uint64_t new_cap) {
+void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     if(new_cap < table->count) {
         fatal_error(NULL, "new table capacity is smaller than the older one");
     }
-    blok_Table new = blok_table_init_capacity(b, new_cap);
+    blok_Table * new_ptr = blok_table_allocate(b, new_cap);
+    blok_Table new = *new_ptr;
     for(uint64_t i = 0; i < table->cap; ++i) {
         blok_KeyValue item = table->items[i];
         if(!blok_symbol_empty(item.key)) {
             blok_table_set(b, &new, item.key, item.value);
         }
     }
-    free(table->items);
+    blok_scope_reclaim(b, table->items);
+    blok_scope_reclaim(b, new_ptr);
     *table = new;
 }
 
@@ -614,6 +621,58 @@ void blok_table_run_tests(void) {
     blok_scope_close(&b);
 }
 
+blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj);
+blok_List * blok_list_copy(blok_Scope * destination_scope, blok_List const * const list) {
+    blok_List * result = blok_list_allocate(destination_scope, list->len);
+    for(int32_t i = 0; i < list->len; ++i) {
+        blok_list_append(result, list->items[i]);
+    }
+    return result;
+}
+
+blok_String * blok_string_copy(blok_Scope * destination_scope, blok_String const * const str) {
+    blok_String * result = blok_string_allocate(str->len);
+    strncpy(result->ptr, str->ptr, str->len + 1);
+    return result;
+}
+
+
+blok_Symbol * blok_symbol_copy(blok_Scope * destination_scope, blok_Symbol const * const sym) {
+    blok_Symbol * result = blok_symbol_allocate();
+    memcpy(result->buf, sym->buf, sizeof(result->buf));
+    return result;
+}
+
+
+/* All objects use value semantics, so they should be copied when being assigned
+ * or passed as parameters
+ */
+blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj) {
+    switch(obj.tag) {
+        case BLOK_TAG_FALSE:
+        case BLOK_TAG_TRUE:
+        case BLOK_TAG_NIL:
+        case BLOK_TAG_PRIMITIVE:
+        case BLOK_TAG_INT:
+            return obj;
+        case BLOK_TAG_LIST:
+            return blok_obj_from_list(blok_list_copy(blok_list_from_obj(obj)));
+        case BLOK_TAG_STRING:
+            return blok_obj_from_string(blok_string_copy(blok_string_from_obj(obj)));
+        case BLOK_TAG_SYMBOL:
+            return blok_obj_from_symbol(blok_symbol_copy(blok_symbol_from_obj(obj)));
+            break;
+        case BLOK_TAG_KEYVALUE:
+            fatal_error(NULL, "TODO");
+            break;
+        case BLOK_TAG_TABLE:
+            fatal_error(NULL, "TODO");
+        default:
+            printf("<Uncopyable %s>", blok_tag_get_name(obj.tag));
+            break;
+    }
+    return blok_make_nil();
+}
 
 /*
 void blok_obj_free(blok_Obj obj) {
@@ -747,58 +806,6 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
             printf("<Unprintable %s>", blok_char_ptr_from_tag(obj.tag));
             break;
     }
-}
-
-blok_Obj blok_obj_copy(blok_Obj obj);
-blok_List * blok_list_copy(blok_List const * const list) {
-    blok_List * result = blok_list_allocate(list->len);
-    for(int32_t i = 0; i < list->len; ++i) {
-        blok_list_append(result, blok_obj_copy(list->items[i]));
-    }
-    return result;
-}
-
-blok_String * blok_string_copy(blok_String const * const str) {
-    blok_String * result = blok_string_allocate(str->len);
-    strncpy(result->ptr, str->ptr, str->len + 1);
-    return result;
-}
-
-
-blok_Symbol * blok_symbol_copy(blok_Symbol const * const sym) {
-    blok_Symbol * result = blok_symbol_allocate();
-    memcpy(result->buf, sym->buf, sizeof(result->buf));
-    return result;
-}
-
-/* All objects use value semantics, so they should be copied when being assigned
- * or passed as parameters
- */
-
-blok_Obj blok_obj_copy(blok_Obj obj) {
-    /*TODO finish*/
-    switch(obj.tag) {
-        case BLOK_TAG_NIL: 
-        case BLOK_TAG_INT:
-        case BLOK_TAG_PRIMITIVE:
-            return obj;
-        case BLOK_TAG_LIST:
-            return blok_obj_from_list(blok_list_copy(blok_list_from_obj(obj)));
-        case BLOK_TAG_STRING:
-            return blok_obj_from_string(blok_string_copy(blok_string_from_obj(obj)));
-        case BLOK_TAG_SYMBOL:
-            return blok_obj_from_symbol(blok_symbol_copy(blok_symbol_from_obj(obj)));
-            break;
-        case BLOK_TAG_KEYVALUE:
-            fatal_error(NULL, "TODO");
-            break;
-        case BLOK_TAG_TABLE:
-            fatal_error(NULL, "TODO");
-        default:
-            printf("<Uncopyable %s>", blok_char_ptr_from_tag(obj.tag));
-            break;
-    }
-    return blok_make_nil();
 }
 
 
