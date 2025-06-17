@@ -1,4 +1,4 @@
-ERRORS=1000
+ERRORS=3
 MAX_ERRORS_GCC= "--max-errors=${ERRORS}"
 MAX_ERRORS_CLANG= "-ferror-limit=${ERRORS}"
 SRC= main.c

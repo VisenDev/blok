@@ -46,7 +46,7 @@ typedef enum {
 } blok_Tag;
 
 
-const char * blok_char_ptr_from_tag(blok_Tag tag) {
+const char * blok_tag_get_name(blok_Tag tag) {
 
     switch(tag) {
         case BLOK_TAG_NIL:       return "BLOK_TAG_NIL";
@@ -63,6 +63,14 @@ const char * blok_char_ptr_from_tag(blok_Tag tag) {
     }
 }
 
+
+struct blok_Table;
+typedef struct blok_Scope { 
+    struct blok_Scope * parent;
+    blok_Arena arena;
+    struct blok_Table * bindings;
+} blok_Scope; 
+
 typedef struct {
     blok_Tag tag; 
     union {
@@ -75,6 +83,7 @@ typedef struct {
     int32_t len;
     int32_t cap;
     blok_Obj * items;
+    blok_Scope * scope; /*the scope in which new items are allocated*/
 } blok_List;
 
 typedef struct {
@@ -98,22 +107,15 @@ typedef struct {
     uint32_t cap;
     uint32_t iterate_i;
     blok_KeyValue * items;
+    blok_Scope * scope; /*the scope in which new items are allocated*/
 } blok_Table;
 
 /*#define BLOK_FUNCTION_MAX_PARAMS 8*/
 typedef struct {
-    //key: name, value: type
     blok_List * params;
     blok_List * body;
-    //blok_Table static_variables;
-    //TODO figure out return types
 } blok_Function;
 
-typedef struct blok_Scope { 
-    struct blok_Scope * parent;
-    blok_Arena arena;
-    blok_Table bindings;
-} blok_Scope; 
 
 void * blok_scope_alloc(blok_Scope * b, size_t bytes) {
     return blok_arena_alloc(&b->arena, bytes);
@@ -157,19 +159,25 @@ typedef enum {
 } blok_Primitive;
 
 
-blok_Obj blok_obj_allocate(blok_Tag tag, int32_t bytes) {
-    char * mem = malloc(bytes);
+/*
+blok_Obj blok_obj_allocate(blok_Scope * b, blok_Tag tag, int32_t bytes) {
+    char * mem = blok_scope_alloc(b, bytes);
     memset(mem, 0, bytes);
     blok_Obj result = {0};
     result.as.ptr = mem;
     result.tag = tag;
     return result;
 }
+*/
 
-void * blok_obj_extract_ptr(blok_Obj obj) {
-    if(obj.tag == BLOK_TAG_INT || BLOK_TAG_NIL) {
-      fatal_error(NULL, "You tried to get the pointer out of a type that does not "
-                  "contain a ptr");
+//TODO: finish fixing this function!
+void * blok_ptr_from_obj(blok_Obj obj) {
+    if (obj.tag == BLOK_TAG_INT
+    ||  obj.tag == BLOK_TAG_NIL || BLOK_TAG_FALSE ||
+        BLOK_TAG_TRUE || BLOK_TAG_PRIMITIVE) {
+        fatal_error(NULL,
+                "You tried to get the pointer out of a type that does not "
+                "contain a ptr");
     }
     obj.tag = 0;
     return obj.as.ptr;
@@ -181,8 +189,8 @@ blok_Symbol blok_symbol_from_char_ptr(const char * ptr) {
     return sym;
 }
 
-blok_Symbol * blok_symbol_allocate(void) {
-    blok_Symbol * result = malloc(sizeof(blok_Symbol));
+blok_Symbol * blok_symbol_allocate(blok_Scope * b) {
+    blok_Symbol * result = blok_scope_alloc(b, sizeof(blok_Symbol));
     memset(result, 0, sizeof(blok_Symbol));
     return result;
 }
@@ -220,50 +228,53 @@ blok_Obj blok_make_boolean(bool cond) {
 }
 
 
-blok_Obj blok_make_function(blok_List * params, blok_List * body) {
-    blok_Function * result = malloc(sizeof(blok_Function));
+blok_Obj blok_make_function(blok_Scope * b, blok_List * params, blok_List * body) {
+    blok_Function * result = blok_scope_alloc(b, sizeof(blok_Function));
     result->params = params;
     result->body = body;
     return blok_obj_from_function(result);
 }
 
 
-blok_List * blok_list_allocate(int32_t initial_capacity) {
-    /*printf("allocating new list\n"); fflush(stdout);*/
-    blok_List * result = malloc(sizeof(blok_List));
+blok_List * blok_list_allocate(blok_Scope * b, int32_t initial_capacity) {
+    assert(b != NULL);
+    blok_List * result = blok_scope_alloc(b, sizeof(blok_List));
     assert(result != NULL);
     result->len = 0;
     result->cap = initial_capacity;
-    result->items = malloc(result->cap * sizeof(blok_Obj));
+    result->scope = b;
+    result->items = blok_scope_alloc(b, result->cap * sizeof(blok_Obj));
     assert(result->items != NULL);
     return result;
 }
 
+/*
 void blok_list_free(blok_List * l) {
     free(l->items);
     free(l);
 }
+*/
 
-blok_String * blok_string_allocate(uint64_t capacity) {
-    blok_String * blok_str = malloc(sizeof(blok_String));
+blok_String * blok_string_allocate(blok_Scope * b, uint64_t capacity) {
+    blok_String * blok_str = blok_scope_alloc(b, sizeof(blok_String));
     assert(((uintptr_t)blok_str & 0xf) == 0);
 
     blok_str->len = 0;
     blok_str->cap = capacity + 1;
-    blok_str->ptr = malloc(capacity + 1);
+    blok_str->ptr = blok_scope_alloc(b, capacity + 1);
     memset(blok_str->ptr, 0, capacity + 1);
     return blok_str;
 }
 
-blok_Obj blok_make_string(const char * str) {
+blok_Obj blok_make_string(blok_Scope * b, const char * str) {
     const int32_t len = strlen(str);
-    blok_String * result = blok_string_allocate(len);
+    blok_String * result = blok_string_allocate(b, len);
     strncpy(result->ptr, str, len + 1);
     return blok_obj_from_ptr(result, BLOK_TAG_STRING);
 }
 
-blok_Obj blok_make_symbol(const char * str) {
-    blok_Symbol * sym = malloc(sizeof(blok_Symbol));
+blok_Obj blok_make_symbol(blok_Scope * b, const char * str) {
+    blok_Symbol * sym = blok_scope_alloc(b, sizeof(blok_Symbol));
     strncpy(sym->buf, str, BLOK_SYMBOL_MAX_LEN - 1);
     blok_Obj result = {0};
     result.as.ptr = sym;
@@ -337,23 +348,8 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
             case BLOK_TAG_SYMBOL:
                 return blok_symbol_equal(*blok_symbol_from_obj(lhs),
                         *blok_symbol_from_obj(rhs));
-            case BLOK_TAG_KEYVALUE:
-                //TODO
-                fatal_error(NULL, "Comparison for this tag not implemented yet");
-                return false;
-            case BLOK_TAG_TABLE:
-                //TODO
-                fatal_error(NULL, "Comparison for this tag not implemented yet");
-                return false;
-            case BLOK_TAG_LIST:
-                //TODO
-                fatal_error(NULL, "Comparison for this tag not implemented yet");
-                return false;
-            case BLOK_TAG_PRIMITIVE:
-                //TODO
-                fatal_error(NULL, "Primitive comparison not implemented");
-                return false;
             default: 
+                printf("Tag: %s\n", blok_tag_get_name(lhs.tag));
                 fatal_error(NULL, "Comparison for this tag not implemented yet");
                 return false;
         }
