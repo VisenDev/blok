@@ -209,6 +209,7 @@ blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
 }
 
 blok_Obj blok_obj_from_list(blok_List * l) { return blok_obj_from_ptr(l, BLOK_TAG_LIST); }
+blok_Obj blok_obj_from_keyvalue(blok_KeyValue* l) { return blok_obj_from_ptr(l, BLOK_TAG_KEYVALUE); }
 blok_Obj blok_obj_from_table(blok_Table * l) { return blok_obj_from_ptr(l, BLOK_TAG_TABLE); }
 blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
 blok_Obj blok_obj_from_symbol(blok_Symbol * s) { return blok_obj_from_ptr(s, BLOK_TAG_SYMBOL); }
@@ -251,6 +252,11 @@ blok_List * blok_list_allocate(blok_Scope * b, int32_t initial_capacity) {
     result->scope = b;
     result->items = blok_scope_alloc(b, result->cap * sizeof(blok_Obj));
     assert(result->items != NULL);
+    return result;
+}
+
+blok_KeyValue * blok_keyvalue_allocate(blok_Scope * b) {
+    void * result = blok_scope_alloc(b, sizeof(blok_KeyValue));
     return result;
 }
 
@@ -371,6 +377,7 @@ bool blok_symbol_empty(blok_Symbol sym) {
 }
 
 
+blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj);
 //void blok_obj_free(blok_Obj obj);
 
 void blok_list_append(blok_List* l, blok_Obj item) {
@@ -440,7 +447,7 @@ void blok_table_iterate_start(blok_Table * table) {
     table->iterate_i = 0;
 }
 
-blok_KeyValue * blok_table_find_slot(blok_Scope * b, blok_Table * table, blok_Symbol key) {
+blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
     /*
     function find_slot(key)
         i := hash(key) modulo num_slots
@@ -452,7 +459,7 @@ blok_KeyValue * blok_table_find_slot(blok_Scope * b, blok_Table * table, blok_Sy
 
     if(table->cap <= 0) {
         table->cap = 8;
-        table->items = blok_scope_alloc(b, sizeof(blok_KeyValue) * table->cap);
+        table->items = blok_scope_alloc(table->scope, sizeof(blok_KeyValue) * table->cap);
         memset(table->items, 0, sizeof(blok_KeyValue) * table->cap);
     }
     uint64_t i = blok_hash(key) % (table->cap - 1);
@@ -476,15 +483,15 @@ blok_KeyValue * blok_table_find_slot(blok_Scope * b, blok_Table * table, blok_Sy
     } while(1);
 }
 
-blok_Obj blok_table_get(blok_Scope * b, blok_Table * table, blok_Symbol key) {
-    blok_KeyValue * kv = blok_table_find_slot(b, table, key);
+blok_Obj blok_table_get(blok_Scope * destination_scope, blok_Table * table, blok_Symbol key) {
+    blok_KeyValue * kv = blok_table_find_slot(table, key);
     if(kv == NULL) {
         return blok_make_nil();
     } else if(blok_symbol_empty(kv->key)) {
         return blok_make_nil();
     } else {
         //TODO actually copy this value
-        return &kv->value;
+        return blok_obj_copy(destination_scope, kv->value);
     }
 }
 
@@ -494,20 +501,21 @@ void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     if(new_cap < table->count) {
         fatal_error(NULL, "new table capacity is smaller than the older one");
     }
-    blok_Table * new_ptr = blok_table_allocate(b, new_cap);
+    blok_Table * new_ptr = blok_table_allocate(table->scope, new_cap);
     blok_Table new = *new_ptr;
     for(uint64_t i = 0; i < table->cap; ++i) {
         blok_KeyValue item = table->items[i];
         if(!blok_symbol_empty(item.key)) {
-            blok_table_set(b, &new, item.key, item.value);
+            blok_table_set(&new, item.key, item.value);
         }
     }
-    blok_scope_reclaim(b, table->items);
-    blok_scope_reclaim(b, new_ptr);
+    //TODO examine closely memory management in this function
+    //blok_scope_reclaim(table->items);
+    //blok_scope_reclaim(b, new_ptr);
     *table = new;
 }
 
-blok_Obj blok_table_set(blok_Scope * b, blok_Table * table, blok_Symbol key, blok_Obj value) {
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
     /*
     function set(key, value)
         i := find_slot(key)
@@ -521,16 +529,19 @@ blok_Obj blok_table_set(blok_Scope * b, blok_Table * table, blok_Symbol key, blo
         slot[i].key := key
         slot[i].value := value
     */
+    assert(table->scope != NULL);
+    assert(table->cap != 0);
 
-    if(table->cap == 0) {
+    /*
+     if(table->cap == 0) {
         *table = blok_table_init_capacity(b, 8);
-    } 
+    } */
 
     if(table->count + 1 > table->cap / 3) {
-        blok_table_rehash(b, table, table->cap * 3);
+        blok_table_rehash(table, table->cap * 3);
     }
 
-    blok_KeyValue * kv = blok_table_find_slot(b, table, key);
+    blok_KeyValue * kv = blok_table_find_slot(table, key);
     if (kv == NULL)
           fatal_error(NULL, "table cannot find slot for key: %s", key.buf);
     if(!blok_symbol_empty(kv->key)) {
@@ -596,27 +607,26 @@ void blok_table_empty(blok_Scope * b, blok_Table * table) {
 
 void blok_table_run_tests(void) {
     blok_Scope b = {0};
-    blok_Table table = blok_table_init_capacity(&b, 16);
-    assert(table.cap == 16);
-    assert(table.count == 0);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
+    blok_Table * table = blok_table_allocate(&b, 16);
+    assert(table->cap == 16);
+    assert(table->count == 0);
+    assert(table->iterate_i == 0);
+    assert(table->items != NULL);
 
-    blok_table_set(&b, &table, blok_symbol_from_char_ptr("hello"),
-                   blok_make_int(10));
-    assert(table.cap == 16);
-    assert(table.count == 1);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
+    blok_table_set(table, blok_symbol_from_char_ptr("hello"), blok_make_int(10));
+    assert(table->cap == 16);
+    assert(table->count == 1);
+    assert(table->iterate_i == 0);
+    assert(table->items != NULL);
 
-    blok_Obj *value =
-        blok_table_get(&b, &table, blok_symbol_from_char_ptr("hello"));
-    assert(value);
-    assert(value->as.data == 10);
-    assert(table.cap == 16);
-    assert(table.count == 1);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
+    blok_Obj value =
+        blok_table_get(&b, table, blok_symbol_from_char_ptr("hello"));
+    assert(value.tag != BLOK_TAG_NIL);
+    assert(value.as.data == 10);
+    assert(table->cap == 16);
+    assert(table->count == 1);
+    assert(table->iterate_i == 0);
+    assert(table->items != NULL);
 
     blok_scope_close(&b);
 }
@@ -631,14 +641,14 @@ blok_List * blok_list_copy(blok_Scope * destination_scope, blok_List const * con
 }
 
 blok_String * blok_string_copy(blok_Scope * destination_scope, blok_String const * const str) {
-    blok_String * result = blok_string_allocate(str->len);
+    blok_String * result = blok_string_allocate(destination_scope, str->len);
     strncpy(result->ptr, str->ptr, str->len + 1);
     return result;
 }
 
 
 blok_Symbol * blok_symbol_copy(blok_Scope * destination_scope, blok_Symbol const * const sym) {
-    blok_Symbol * result = blok_symbol_allocate();
+    blok_Symbol * result = blok_symbol_allocate(destination_scope);
     memcpy(result->buf, sym->buf, sizeof(result->buf));
     return result;
 }
@@ -656,20 +666,19 @@ blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj) {
         case BLOK_TAG_INT:
             return obj;
         case BLOK_TAG_LIST:
-            return blok_obj_from_list(blok_list_copy(blok_list_from_obj(obj)));
+            return blok_obj_from_list(blok_list_copy(destination_scope, blok_list_from_obj(obj)));
         case BLOK_TAG_STRING:
-            return blok_obj_from_string(blok_string_copy(blok_string_from_obj(obj)));
+            return blok_obj_from_string(blok_string_copy(destination_scope, blok_string_from_obj(obj)));
         case BLOK_TAG_SYMBOL:
-            return blok_obj_from_symbol(blok_symbol_copy(blok_symbol_from_obj(obj)));
+            return blok_obj_from_symbol(blok_symbol_copy(destination_scope, blok_symbol_from_obj(obj)));
             break;
         case BLOK_TAG_KEYVALUE:
             fatal_error(NULL, "TODO");
             break;
         case BLOK_TAG_TABLE:
             fatal_error(NULL, "TODO");
-        default:
-            printf("<Uncopyable %s>", blok_tag_get_name(obj.tag));
-            break;
+        case BLOK_TAG_FUNCTION:
+            fatal_error(NULL, "TODO");
     }
     return blok_make_nil();
 }
@@ -803,7 +812,7 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
         case BLOK_TAG_TABLE:
             blok_table_print(blok_table_from_obj(obj), style);
         default:
-            printf("<Unprintable %s>", blok_char_ptr_from_tag(obj.tag));
+            printf("<Unprintable %s>", blok_tag_get_name(obj.tag));
             break;
     }
 }
@@ -852,11 +861,11 @@ blok_Obj blok_reader_parse_int(FILE * fp) {
 #define BLOK_READER_STATE_BASE 0
 #define BLOK_READER_STATE_ESCAPE 1
 
-blok_Obj blok_reader_parse_string(FILE * fp) {
+blok_Obj blok_reader_parse_string(blok_Scope * b, FILE * fp) {
     assert(blok_reader_peek(fp) == '"');
     fgetc(fp);
     int state = BLOK_READER_STATE_BASE;
-    blok_Obj str = blok_make_string("");
+    blok_Obj str = blok_make_string(b, "");
 
 
     while(1) {
@@ -906,9 +915,9 @@ bool blok_is_symbol_char(char ch) {
 }
 
 
-blok_Obj blok_reader_parse_obj(FILE * fp);
+blok_Obj blok_reader_parse_obj(blok_Scope * b, FILE * fp);
 
-blok_Obj blok_reader_parse_symbol_or_keyvalue(FILE * fp) {
+blok_Obj blok_reader_parse_symbol_or_keyvalue(blok_Scope * b, FILE * fp) {
     assert(isalpha(blok_reader_peek(fp)));
     blok_Symbol sym = {0};
     uint32_t i = 0;
@@ -923,27 +932,26 @@ blok_Obj blok_reader_parse_symbol_or_keyvalue(FILE * fp) {
 
     blok_reader_skip_whitespace(fp);
     if(blok_reader_peek(fp) == ':') {
-        blok_Obj result = blok_obj_allocate(BLOK_TAG_KEYVALUE, sizeof(blok_KeyValue));
-        blok_KeyValue* kv = blok_obj_extract_ptr(result);
+        blok_KeyValue* kv = blok_keyvalue_allocate(b);
         fgetc(fp); /*skip ':'*/
         kv->key = sym; 
-        kv->value = blok_reader_parse_obj(fp);
-        return result;
+        kv->value = blok_reader_parse_obj(b, fp);
+        return blok_obj_from_keyvalue(kv);
     } else {
-        return blok_make_symbol(sym.buf);
+        return blok_make_symbol(b, sym.buf);
     }
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
-blok_Obj blok_reader_parse_obj(FILE * fp) {
+blok_Obj blok_reader_parse_obj(blok_Scope * b, FILE * fp) {
     blok_reader_skip_whitespace(fp);
     const char ch = blok_reader_peek(fp);
 
     if(isdigit(ch)) {
         return blok_reader_parse_int(fp); 
     } else if(ch == '(') {
-        blok_List * result = blok_list_allocate(8);
-        blok_List * tmp = blok_list_allocate(8);
+        blok_List * result = blok_list_allocate(b, 8);
+        blok_List * tmp = blok_list_allocate(b, 8);
         int32_t sublist_count = 0;
         fgetc(fp);
         blok_reader_skip_whitespace(fp);
@@ -951,10 +959,10 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
             if(blok_reader_peek(fp) == ',') {
                 fgetc(fp);
                 blok_list_append(result, blok_obj_from_list(tmp));
-                tmp = blok_list_allocate(8);
+                tmp = blok_list_allocate(b, 8);
                 ++sublist_count;
             } else {
-                blok_list_append(tmp, blok_reader_parse_obj(fp));
+                blok_list_append(tmp, blok_reader_parse_obj(b, fp));
                 blok_reader_skip_whitespace(fp);
             }
         }
@@ -970,30 +978,30 @@ blok_Obj blok_reader_parse_obj(FILE * fp) {
             return blok_obj_from_list(result);
         }
     } else if(ch == '"') {
-        return blok_reader_parse_string(fp);
+        return blok_reader_parse_string(b, fp);
     } else if(isalpha(ch)) {
-        return blok_reader_parse_symbol_or_keyvalue(fp);
+        return blok_reader_parse_symbol_or_keyvalue(b, fp);
     } else {
         fatal_error(fp, "Parsing failed");
     }
     return blok_make_nil();
 }
 
-blok_Obj blok_reader_read_file(FILE * fp) {
-    blok_List * result = blok_list_allocate(8);
-    blok_list_append(result, blok_make_symbol("progn"));
+blok_Obj blok_reader_read_file(blok_Scope * b, FILE * fp) {
+    blok_List * result = blok_list_allocate(b, 8);
+    blok_list_append(result, blok_make_symbol(b, "progn"));
     blok_reader_skip_whitespace(fp);
     while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        blok_list_append(result, blok_reader_parse_obj(fp));
+        blok_list_append(result, blok_reader_parse_obj(b, fp));
         blok_reader_skip_whitespace(fp);
     }
     return blok_obj_from_list(result);
 }
 
 
-blok_Obj * blok_scope_lookup(blok_Scope * b, blok_Symbol sym) {
-    blok_Obj * result = blok_table_get(b, &b->bindings, sym);
-    if(result == NULL && b->parent != NULL) {
+blok_Obj blok_scope_lookup(blok_Scope * b, blok_Symbol sym) {
+    blok_Obj result = blok_table_get(b, b->bindings, sym);
+    if(result.tag == BLOK_TAG_NIL && b->parent != NULL) {
         result = blok_scope_lookup(b->parent, sym);
     }
     return result;
