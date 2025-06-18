@@ -52,12 +52,17 @@ void * blok_arena_realloc(blok_Arena * a, void * ptr, size_t bytes) {
     for(size_t i = 0; i < a->len; ++i) {
         blok_Region * region = &a->regions[i];
         if(region->ptr == ptr) {
+            /*
             assert(region->active);
             assert(region->cap <= bytes);
-            region->active = false;
             char * mem = blok_arena_alloc(a, bytes);
             memcpy(mem, region->ptr, region->cap);
+            region->active = false;
             return mem;
+            */
+            region->ptr = realloc(region->ptr, bytes);
+            region->cap = bytes;
+            return region->ptr;
         }
     }
     assert(0 && "Tried to realloc unknown ptr");

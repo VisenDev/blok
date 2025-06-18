@@ -81,8 +81,8 @@ typedef struct {
 } blok_List;
 
 typedef struct {
-    int32_t len;
-    int32_t cap;
+    size_t len;
+    size_t cap;
     char * ptr;
     blok_Arena * arena;
 } blok_String;
@@ -276,8 +276,8 @@ blok_String * blok_string_allocate(blok_Arena * b, uint64_t capacity) {
     assert(((uintptr_t)blok_str & 0xf) == 0);
 
     blok_str->len = 0;
-    blok_str->cap = capacity;
-    blok_str->ptr = blok_arena_alloc(b, capacity);
+    blok_str->cap = 2 * capacity + 1;
+    blok_str->ptr = blok_arena_alloc(b, blok_str->cap);
     blok_str->arena = b;
     memset(blok_str->ptr, 0, capacity);
     return blok_str;
@@ -285,7 +285,7 @@ blok_String * blok_string_allocate(blok_Arena * b, uint64_t capacity) {
 
 blok_Obj blok_make_string(blok_Arena * b, const char * str) {
     const int32_t len = strlen(str);
-    blok_String * result = blok_string_allocate(b, len + 1);
+    blok_String * result = blok_string_allocate(b, len);
     strcpy(result->ptr, str);
     result->len = len;
     return blok_obj_from_ptr(result, BLOK_TAG_STRING);
@@ -385,7 +385,6 @@ bool blok_symbol_empty(blok_Symbol sym) {
 void blok_list_append(blok_List* l, blok_Obj item) {
     if(l->len + 1 >= l->cap) {
         l->cap = l->cap * 2 + 1;
-        printf("reallocating list\n"); fflush(stdout);
         l->items = blok_arena_realloc(l->arena, l->items, l->cap * sizeof(blok_Obj));
     }
     l->items[l->len++] = blok_obj_copy(l->arena, item);
@@ -649,8 +648,14 @@ blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * con
 }
 
 blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String * str) {
-    blok_String * result = blok_string_allocate(destination_scope, str->len);
-    strncpy(result->ptr, str->ptr, str->len);
+    size_t len = strlen(str->ptr);
+    if(str->len != len) {
+        printf("str->len: %zu, strlen(str->ptr): %zu", str->len, len);
+    }
+    blok_String * result = blok_string_allocate(destination_scope, str->cap);
+
+    strcpy(result->ptr, str->ptr);
+    result->len = str->len;
     return result;
 }
 
@@ -898,8 +903,6 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
     fgetc(fp);
     int state = BLOK_READER_STATE_BASE;
     blok_String * str = blok_string_allocate(b, 8);
-
-
     while(1) {
         char ch = blok_reader_peek(fp);
         if(feof(fp)) fatal_error(fp, "Unexpected end of file");
@@ -909,7 +912,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
                     state = BLOK_READER_STATE_ESCAPE;
                 } else if (ch == '"') {
                     fgetc(fp);
-                    printf("parsed: %s\n", str->ptr); fflush(stdout);
+
                     return blok_obj_from_string(str);
                 } else {
                     blok_string_append(str, fgetc(fp));
@@ -940,7 +943,6 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
                 break;
         }
     }
-    return blok_obj_from_string(str);
 }
 
 bool blok_is_symbol_char(char ch) {
@@ -983,6 +985,18 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp) {
     if(isdigit(ch)) {
         return blok_reader_parse_int(fp); 
     } else if(ch == '(') {
+        fgetc(fp);
+        blok_reader_skip_whitespace(fp);
+
+        blok_List * result = blok_list_allocate(b, 4);
+        while(blok_reader_peek(fp) != ')' && !feof(fp)) {
+            blok_list_append(result, blok_reader_parse_obj(b, fp));
+            blok_reader_skip_whitespace(fp);
+        }
+        fgetc(fp);
+        blok_reader_skip_whitespace(fp);
+        return blok_obj_from_list(result);
+        /*
         blok_List * result = blok_list_allocate(b, 16);
         blok_List * tmp = blok_list_allocate(b, 16);
         int32_t sublist_count = 0;
@@ -1009,8 +1023,11 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp) {
             blok_list_append(result, blok_obj_from_list(tmp));
             return blok_obj_from_list(result);
         }
+        */
     } else if(ch == '"') {
-        return blok_reader_parse_string(b, fp);
+        blok_Obj result = blok_reader_parse_string(b, fp);
+        /*printf("Contents of result str inside parse fn: %s\n", blok_string_from_obj(result)->ptr); fflush(stdout);*/
+        return result;
     } else if(isalpha(ch)) {
         return blok_reader_parse_symbol_or_keyvalue(b, fp);
     } else {
@@ -1089,6 +1106,8 @@ blok_Obj blok_evaluator_apply_function(
     assert(argc == fn->params->len && "Wrong number of arguments");
     //TODO support function local bindings
     //TODO undefine local bindings once done with them
+    blok_Scope * fn_local = {0};
+    fn_local->bindings
 
     for(int32_t i = 0; i < argc; ++i) {
         blok_scope_bind(b, *blok_symbol_from_obj(fn->params->items[i]), argv[i]);
@@ -1323,11 +1342,10 @@ int main(void) {
 
     FILE * fp = fopen("test.lisp", "r");
     blok_Obj source = blok_reader_read_file(&b.arena, fp);
-    (void)source;
-    blok_obj_print(source, BLOK_STYLE_CODE);
-    ////fflush(stdout);
+    //blok_obj_print(source, BLOK_STYLE_CODE);
+    //fflush(stdout);
 
-    ////blok_evaluator_eval(&b, source);
+    blok_evaluator_eval(&b, source);
     blok_arena_free(&b.arena);
 
     fclose(fp);
