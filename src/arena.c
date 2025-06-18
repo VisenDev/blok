@@ -1,6 +1,8 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <string.h>
 
 typedef struct {
     size_t cap;
@@ -84,4 +86,16 @@ void blok_arena_free(blok_Arena * a) {
     free(a->regions);
     a->cap = 0;
     a->len = 0;
+}
+
+void blok_arena_run_tests(void) {
+    blok_Arena a = {0};
+    char * mem = blok_arena_alloc(&a, 16);
+    memset(mem, 0, 16);
+    char * mem2 = blok_arena_alloc(&a, 1000);
+    memset(mem2, 0, 1000);
+    blok_arena_reclaim(&a, mem);
+    char * mem3 = blok_arena_alloc(&a, 8);
+    assert(mem3 == mem);
+    blok_arena_free(&a);
 }

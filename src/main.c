@@ -13,6 +13,13 @@
 
 #include "arena.c"
 
+
+/* TODO
+ * stop manually passing arena to functions that take a blok_Bindings. 
+ * The arena pointed to by the bindings table will be fine as an allocator 
+ * for locals
+ */
+
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
         const long progress = ftell(fp);
@@ -64,12 +71,6 @@ const char * blok_tag_get_name(blok_Tag tag) {
 }
 
 
-struct blok_Table;
-typedef struct blok_Scope { 
-    struct blok_Scope * parent;
-    blok_Arena arena;
-    struct blok_Table * bindings;
-} blok_Scope; 
 
 typedef struct {
     blok_Tag tag; 
@@ -83,7 +84,7 @@ typedef struct {
     int32_t len;
     int32_t cap;
     blok_Obj * items;
-    blok_Scope * scope; /*the scope in which new items are allocated*/
+    blok_Arena * scope; /*the scope in which new items are allocated*/
 } blok_List;
 
 typedef struct {
@@ -107,7 +108,7 @@ typedef struct {
     uint32_t cap;
     uint32_t iterate_i;
     blok_KeyValue * items;
-    blok_Scope * scope; /*the scope in which new items are allocated*/
+    blok_Arena * scope; /*the scope in which new items are allocated*/
 } blok_Table;
 
 /*#define BLOK_FUNCTION_MAX_PARAMS 8*/
@@ -117,16 +118,23 @@ typedef struct {
 } blok_Function;
 
 
-void * blok_scope_alloc(blok_Scope * b, size_t bytes) {
-    return blok_arena_alloc(&b->arena, bytes);
-}
+//typedef struct blok_Arena { 
+    //struct blok_Arena * parent;
+    //blok_Arena arena;
+    //blok_Table * bindings;
+//} blok_Arena; 
 
-void blok_scope_close(blok_Scope * b) {
-    blok_arena_free(&b->arena);
-}
-void blok_scope_reclaim(blok_Scope * b, void * ptr) {
-    blok_arena_reclaim(&b->arena, ptr);
-}
+
+//void * blok_arena_alloc(blok_Arena * b, size_t bytes) {
+//    return blok_arena_alloc(&b->arena, bytes);
+//}
+//
+//void blok_scope_close(blok_Arena * b) {
+//    blok_arena_free(&b->arena);
+//}
+//void blok_scope_reclaim(blok_Arena * b, void * ptr) {
+//    blok_arena_reclaim(&b->arena, ptr);
+//}
 
 
 #define BLOK_PARAMETER_COUNT_MAX 8
@@ -163,8 +171,8 @@ typedef enum {
 
 
 /*
-blok_Obj blok_obj_allocate(blok_Scope * b, blok_Tag tag, int32_t bytes) {
-    char * mem = blok_scope_alloc(b, bytes);
+blok_Obj blok_obj_allocate(blok_Arena * b, blok_Tag tag, int32_t bytes) {
+    char * mem = blok_arena_alloc(b, bytes);
     memset(mem, 0, bytes);
     blok_Obj result = {0};
     result.as.ptr = mem;
@@ -194,8 +202,8 @@ blok_Symbol blok_symbol_from_char_ptr(const char * ptr) {
     return sym;
 }
 
-blok_Symbol * blok_symbol_allocate(blok_Scope * b) {
-    blok_Symbol * result = blok_scope_alloc(b, sizeof(blok_Symbol));
+blok_Symbol * blok_symbol_allocate(blok_Arena * a) {
+    blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
     memset(result, 0, sizeof(blok_Symbol));
     return result;
 }
@@ -235,28 +243,28 @@ blok_Obj blok_make_boolean(bool cond) {
 }
 
 
-blok_Obj blok_make_function(blok_Scope * b, blok_List * params, blok_List * body) {
-    blok_Function * result = blok_scope_alloc(b, sizeof(blok_Function));
+blok_Obj blok_make_function(blok_Arena * b, blok_List * params, blok_List * body) {
+    blok_Function * result = blok_arena_alloc(b, sizeof(blok_Function));
     result->params = params;
     result->body = body;
     return blok_obj_from_function(result);
 }
 
 
-blok_List * blok_list_allocate(blok_Scope * b, int32_t initial_capacity) {
-    assert(b != NULL);
-    blok_List * result = blok_scope_alloc(b, sizeof(blok_List));
+blok_List * blok_list_allocate(blok_Arena * a, int32_t initial_capacity) {
+    assert(a != NULL);
+    blok_List * result = blok_arena_alloc(a, sizeof(blok_List));
     assert(result != NULL);
     result->len = 0;
     result->cap = initial_capacity;
-    result->scope = b;
-    result->items = blok_scope_alloc(b, result->cap * sizeof(blok_Obj));
+    result->scope = a;
+    result->items = blok_arena_alloc(a, result->cap * sizeof(blok_Obj));
     assert(result->items != NULL);
     return result;
 }
 
-blok_KeyValue * blok_keyvalue_allocate(blok_Scope * b) {
-    void * result = blok_scope_alloc(b, sizeof(blok_KeyValue));
+blok_KeyValue * blok_keyvalue_allocate(blok_Arena * b) {
+    void * result = blok_arena_alloc(b, sizeof(blok_KeyValue));
     return result;
 }
 
@@ -267,26 +275,26 @@ void blok_list_free(blok_List * l) {
 }
 */
 
-blok_String * blok_string_allocate(blok_Scope * b, uint64_t capacity) {
-    blok_String * blok_str = blok_scope_alloc(b, sizeof(blok_String));
+blok_String * blok_string_allocate(blok_Arena * b, uint64_t capacity) {
+    blok_String * blok_str = blok_arena_alloc(b, sizeof(blok_String));
     assert(((uintptr_t)blok_str & 0xf) == 0);
 
     blok_str->len = 0;
     blok_str->cap = capacity + 1;
-    blok_str->ptr = blok_scope_alloc(b, capacity + 1);
+    blok_str->ptr = blok_arena_alloc(b, capacity + 1);
     memset(blok_str->ptr, 0, capacity + 1);
     return blok_str;
 }
 
-blok_Obj blok_make_string(blok_Scope * b, const char * str) {
+blok_Obj blok_make_string(blok_Arena * b, const char * str) {
     const int32_t len = strlen(str);
     blok_String * result = blok_string_allocate(b, len);
     strncpy(result->ptr, str, len + 1);
     return blok_obj_from_ptr(result, BLOK_TAG_STRING);
 }
 
-blok_Obj blok_make_symbol(blok_Scope * b, const char * str) {
-    blok_Symbol * sym = blok_scope_alloc(b, sizeof(blok_Symbol));
+blok_Obj blok_make_symbol(blok_Arena * b, const char * str) {
+    blok_Symbol * sym = blok_arena_alloc(b, sizeof(blok_Symbol));
     strncpy(sym->buf, str, BLOK_SYMBOL_MAX_LEN - 1);
     blok_Obj result = {0};
     result.as.ptr = sym;
@@ -377,7 +385,7 @@ bool blok_symbol_empty(blok_Symbol sym) {
 }
 
 
-blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj);
+blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
 //void blok_obj_free(blok_Obj obj);
 
 void blok_list_append(blok_List* l, blok_Obj item) {
@@ -417,10 +425,10 @@ int32_t blok_hash(blok_Symbol sym) {
     return blok_hash_char_ptr(sym.buf, (char*)memchr(sym.buf, 0, BLOK_SYMBOL_MAX_LEN) - sym.buf);
 }
 
-blok_Table * blok_table_allocate(blok_Scope * b, int32_t cap) {
-    blok_Table * table = blok_scope_alloc(b, sizeof(blok_Table));
+blok_Table * blok_table_allocate(blok_Arena * b, int32_t cap) {
+    blok_Table * table = blok_arena_alloc(b, sizeof(blok_Table));
     const uint64_t bytes = sizeof(blok_KeyValue) * cap;
-    table->items = blok_scope_alloc(b, bytes);
+    table->items = blok_arena_alloc(b, bytes);
     memset(table->items, 0, bytes);
     table->count = 0;
     table->iterate_i = 0;
@@ -429,7 +437,7 @@ blok_Table * blok_table_allocate(blok_Scope * b, int32_t cap) {
 }
 
 
-blok_Obj blok_make_table(blok_Scope * b, int32_t cap) {
+blok_Obj blok_make_table(blok_Arena * b, int32_t cap) {
     return blok_obj_from_table(blok_table_allocate(b, cap));
 }
 
@@ -456,10 +464,12 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
             i := (i + 1) modulo num_slots
         return i
     */
+    assert(table != NULL);
+    assert(table->scope != NULL);
 
     if(table->cap <= 0) {
         table->cap = 8;
-        table->items = blok_scope_alloc(table->scope, sizeof(blok_KeyValue) * table->cap);
+        table->items = blok_arena_alloc(table->scope, sizeof(blok_KeyValue) * table->cap);
         memset(table->items, 0, sizeof(blok_KeyValue) * table->cap);
     }
     uint64_t i = blok_hash(key) % (table->cap - 1);
@@ -483,7 +493,7 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
     } while(1);
 }
 
-blok_Obj blok_table_get(blok_Scope * destination_scope, blok_Table * table, blok_Symbol key) {
+blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok_Symbol key) {
     blok_KeyValue * kv = blok_table_find_slot(table, key);
     if(kv == NULL) {
         return blok_make_nil();
@@ -594,7 +604,7 @@ blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
 }
 
 /*
-void blok_table_empty(blok_Scope * b, blok_Table * table) {
+void blok_table_empty(blok_Arena * b, blok_Table * table) {
     blok_table_iterate_start(table);
     blok_KeyValue * pair = NULL;
     while((pair = blok_table_iterate_next(table)) != NULL) {
@@ -606,7 +616,7 @@ void blok_table_empty(blok_Scope * b, blok_Table * table) {
 */
 
 void blok_table_run_tests(void) {
-    blok_Scope b = {0};
+    blok_Arena b = {0};
     blok_Table * table = blok_table_allocate(&b, 16);
     assert(table->cap == 16);
     assert(table->count == 0);
@@ -628,11 +638,11 @@ void blok_table_run_tests(void) {
     assert(table->iterate_i == 0);
     assert(table->items != NULL);
 
-    blok_scope_close(&b);
+    blok_arena_free(&b);
 }
 
-blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj);
-blok_List * blok_list_copy(blok_Scope * destination_scope, blok_List const * const list) {
+blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
+blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * const list) {
     blok_List * result = blok_list_allocate(destination_scope, list->len);
     for(int32_t i = 0; i < list->len; ++i) {
         blok_list_append(result, list->items[i]);
@@ -640,14 +650,14 @@ blok_List * blok_list_copy(blok_Scope * destination_scope, blok_List const * con
     return result;
 }
 
-blok_String * blok_string_copy(blok_Scope * destination_scope, blok_String const * const str) {
+blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String const * const str) {
     blok_String * result = blok_string_allocate(destination_scope, str->len);
     strncpy(result->ptr, str->ptr, str->len + 1);
     return result;
 }
 
 
-blok_Symbol * blok_symbol_copy(blok_Scope * destination_scope, blok_Symbol const * const sym) {
+blok_Symbol * blok_symbol_copy(blok_Arena * destination_scope, blok_Symbol const * const sym) {
     blok_Symbol * result = blok_symbol_allocate(destination_scope);
     memcpy(result->buf, sym->buf, sizeof(result->buf));
     return result;
@@ -657,7 +667,7 @@ blok_Symbol * blok_symbol_copy(blok_Scope * destination_scope, blok_Symbol const
 /* All objects use value semantics, so they should be copied when being assigned
  * or passed as parameters
  */
-blok_Obj blok_obj_copy(blok_Scope * destination_scope, blok_Obj obj) {
+blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
     switch(obj.tag) {
         case BLOK_TAG_FALSE:
         case BLOK_TAG_TRUE:
@@ -861,7 +871,7 @@ blok_Obj blok_reader_parse_int(FILE * fp) {
 #define BLOK_READER_STATE_BASE 0
 #define BLOK_READER_STATE_ESCAPE 1
 
-blok_Obj blok_reader_parse_string(blok_Scope * b, FILE * fp) {
+blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
     assert(blok_reader_peek(fp) == '"');
     fgetc(fp);
     int state = BLOK_READER_STATE_BASE;
@@ -915,9 +925,9 @@ bool blok_is_symbol_char(char ch) {
 }
 
 
-blok_Obj blok_reader_parse_obj(blok_Scope * b, FILE * fp);
+blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp);
 
-blok_Obj blok_reader_parse_symbol_or_keyvalue(blok_Scope * b, FILE * fp) {
+blok_Obj blok_reader_parse_symbol_or_keyvalue(blok_Arena * b, FILE * fp) {
     assert(isalpha(blok_reader_peek(fp)));
     blok_Symbol sym = {0};
     uint32_t i = 0;
@@ -943,7 +953,7 @@ blok_Obj blok_reader_parse_symbol_or_keyvalue(blok_Scope * b, FILE * fp) {
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
-blok_Obj blok_reader_parse_obj(blok_Scope * b, FILE * fp) {
+blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp) {
     blok_reader_skip_whitespace(fp);
     const char ch = blok_reader_peek(fp);
 
@@ -987,7 +997,7 @@ blok_Obj blok_reader_parse_obj(blok_Scope * b, FILE * fp) {
     return blok_make_nil();
 }
 
-blok_Obj blok_reader_read_file(blok_Scope * b, FILE * fp) {
+blok_Obj blok_reader_read_file(blok_Arena * b, FILE * fp) {
     blok_List * result = blok_list_allocate(b, 8);
     blok_list_append(result, blok_make_symbol(b, "progn"));
     blok_reader_skip_whitespace(fp);
@@ -998,91 +1008,94 @@ blok_Obj blok_reader_read_file(blok_Scope * b, FILE * fp) {
     return blok_obj_from_list(result);
 }
 
+typedef struct blok_Bindings {
+    struct blok_Bindings * parent;
+    blok_Table * locals;
+} blok_Bindings;
 
-blok_Obj blok_scope_lookup(blok_Scope * b, blok_Symbol sym) {
-    blok_Obj result = blok_table_get(b, b->bindings, sym);
-    if(result.tag == BLOK_TAG_NIL && b->parent != NULL) {
-        result = blok_scope_lookup(b->parent, sym);
+blok_Obj blok_scope_lookup(blok_Arena * a, blok_Bindings * bindings,  blok_Symbol sym) {
+    blok_Obj result = blok_table_get(a, bindings->locals, sym);
+    if(result.tag == BLOK_TAG_NIL && bindings->parent != NULL) {
+        result = blok_scope_lookup(a, bindings->parent, sym);
     }
     return result;
 }
 
-void blok_scope_bind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
-    assert(blok_scope_lookup(b, sym) == NULL && "Multiply defined symbol");
-    blok_table_set(b, &b->bindings, sym, value);
+void blok_scope_bind(blok_Arena * a, blok_Bindings * bindings, blok_Symbol sym, blok_Obj value) {
+    assert(blok_scope_lookup(a, bindings, sym).tag == BLOK_TAG_NIL && "Multiply defined symbol");
+    blok_table_set(bindings->locals, sym, value);
 }
 
 
-void blok_scope_bind_builtins(blok_Scope * b) {
-    blok_scope_bind(b, blok_symbol_from_char_ptr("print"),
-                   blok_make_primitive(BLOK_PRIMITIVE_PRINT));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("progn"),
-                   blok_make_primitive(BLOK_PRIMITIVE_PROGN));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("defun"),
-                   blok_make_primitive(BLOK_PRIMITIVE_DEFUN));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("list"),
-                   blok_make_primitive(BLOK_PRIMITIVE_LIST));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("quote"),
-                   blok_make_primitive(BLOK_PRIMITIVE_QUOTE));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("true"),
-                   blok_make_true());
-    blok_scope_bind(b, blok_symbol_from_char_ptr("false"),
-                   blok_make_false());
-    blok_scope_bind(b, blok_symbol_from_char_ptr("when"),
-                   blok_make_primitive(BLOK_PRIMITIVE_WHEN));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("equal"),
-                   blok_make_primitive(BLOK_PRIMITIVE_EQUAL));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("and"),
-                   blok_make_primitive(BLOK_PRIMITIVE_AND));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("lt"),
-                   blok_make_primitive(BLOK_PRIMITIVE_LT));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("gt"),
-                   blok_make_primitive(BLOK_PRIMITIVE_GT));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("lte"),
-                   blok_make_primitive(BLOK_PRIMITIVE_LTE));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("gte"),
-                   blok_make_primitive(BLOK_PRIMITIVE_GTE));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("not"),
-                   blok_make_primitive(BLOK_PRIMITIVE_NOT));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("add"),
-                   blok_make_primitive(BLOK_PRIMITIVE_ADD));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("sub"),
-                   blok_make_primitive(BLOK_PRIMITIVE_SUB));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("mul"),
-                   blok_make_primitive(BLOK_PRIMITIVE_MUL));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("div"),
-                   blok_make_primitive(BLOK_PRIMITIVE_DIV));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("unless"),
-                   blok_make_primitive(BLOK_PRIMITIVE_UNLESS));
-    blok_scope_bind(b, blok_symbol_from_char_ptr("if"),
-                   blok_make_primitive(BLOK_PRIMITIVE_IF));
+void blok_bindings_bind_builtins(blok_Arena * a, blok_Bindings * b) {
+#   define BLOK_BIND_PRIMITIVE(arena, bindings, name, primitive) \
+        blok_scope_bind(arena, bindings, blok_symbol_from_char_ptr(name), \
+           blok_make_primitive(primitive));
+
+    BLOK_BIND_PRIMITIVE(a, b, "print", BLOK_PRIMITIVE_PRINT);
+    BLOK_BIND_PRIMITIVE(a, b, "progn", BLOK_PRIMITIVE_PROGN);
+    BLOK_BIND_PRIMITIVE(a, b, "defun", BLOK_PRIMITIVE_DEFUN);
+    BLOK_BIND_PRIMITIVE(a, b, "list", BLOK_PRIMITIVE_LIST);
+    BLOK_BIND_PRIMITIVE(a, b, "quote", BLOK_PRIMITIVE_QUOTE);
+    BLOK_BIND_PRIMITIVE(a, b, "when", BLOK_PRIMITIVE_WHEN);
+    BLOK_BIND_PRIMITIVE(a, b, "equal", BLOK_PRIMITIVE_EQUAL);
+    BLOK_BIND_PRIMITIVE(a, b, "and", BLOK_PRIMITIVE_AND);
+    BLOK_BIND_PRIMITIVE(a, b, "lt", BLOK_PRIMITIVE_LT);
+    BLOK_BIND_PRIMITIVE(a, b, "gt", BLOK_PRIMITIVE_GT);
+    BLOK_BIND_PRIMITIVE(a, b, "lte", BLOK_PRIMITIVE_LTE);
+    BLOK_BIND_PRIMITIVE(a, b, "gte", BLOK_PRIMITIVE_GTE);
+    BLOK_BIND_PRIMITIVE(a, b, "not", BLOK_PRIMITIVE_NOT);
+    BLOK_BIND_PRIMITIVE(a, b, "add", BLOK_PRIMITIVE_ADD);
+    BLOK_BIND_PRIMITIVE(a, b, "sub", BLOK_PRIMITIVE_SUB);
+    BLOK_BIND_PRIMITIVE(a, b, "mul", BLOK_PRIMITIVE_MUL);
+    BLOK_BIND_PRIMITIVE(a, b, "div", BLOK_PRIMITIVE_DIV);
+    BLOK_BIND_PRIMITIVE(a, b, "unless", BLOK_PRIMITIVE_UNLESS);
+    BLOK_BIND_PRIMITIVE(a, b, "if", BLOK_PRIMITIVE_IF);
+
+#   undef BLOK_BIND_PRIMITIVE
+
+    //blok_scope_bind(b, blok_symbol_from_char_ptr("true"),
+    //               blok_make_true());
+    //blok_scope_bind(b, blok_symbol_from_char_ptr("false"),
+    //               blok_make_false());
 }
 
-blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj);
+blok_Obj blok_evaluator_eval(blok_Arena * a, blok_Bindings * b, blok_Obj obj);
 
-blok_Obj blok_evaluator_apply_function(blok_Scope *b, blok_Function const * fn,
-                                       int32_t argc, blok_Obj *argv) {
+blok_Obj blok_evaluator_apply_function(
+        blok_Arena *a,
+        blok_Bindings *b,
+        blok_Function const * fn,
+        int32_t argc,
+        blok_Obj *argv
+        ) {
     assert(argc == fn->params->len && "Wrong number of arguments");
-    blok_Scope fn_bindings = {0};
+    //TODO support function local bindings
+    //TODO undefine local bindings once done with them
+
     for(int32_t i = 0; i < argc; ++i) {
-        blok_scope_bind(&fn_bindings,
+        blok_scope_bind(a, b,
                 *blok_symbol_from_obj(fn->params->items[i]), argv[i]);
     }
-    fn_bindings.parent = b;
     blok_Obj result = blok_make_nil();
     for(int32_t i = 0; i < fn->body->len; ++i) {
-        result = blok_evaluator_eval(&fn_bindings, fn->body->items[i]);
+        result = blok_evaluator_eval(a, b, fn->body->items[i]);
     }
     return result;
 }
 
-blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
-                                        int32_t argc, blok_Obj *argv) {
+blok_Obj blok_evaluator_apply_primitive(
+        blok_Arena *a,
+        blok_Bindings * b,
+        blok_Primitive prim,
+        int32_t argc,
+        blok_Obj *argv
+        ) {
     switch(prim) {
         case BLOK_PRIMITIVE_PRINT:
             if(argc > 0) {
-                blok_obj_print(blok_evaluator_eval(b, argv[0]), BLOK_STYLE_AESTHETIC); 
-                blok_evaluator_apply_primitive(b, prim, argc - 1, ++argv);
+                blok_obj_print(blok_evaluator_eval(a, b, argv[0]), BLOK_STYLE_AESTHETIC); 
+                blok_evaluator_apply_primitive(a, b, prim, argc - 1, ++argv);
             }
             break;
         case BLOK_PRIMITIVE_PROGN:
@@ -1090,15 +1103,15 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
                 blok_Obj result = blok_make_nil();
                 for(int32_t i = 0; i < argc; ++i) {
                     //blok_obj_free(result);
-                    result = blok_evaluator_eval(b, argv[i]);
+                    result = blok_evaluator_eval(a, b, argv[i]);
                 }
                 return result;
             }
         case BLOK_PRIMITIVE_LIST:
             {
-                blok_List * result = blok_list_allocate(argc);
+                blok_List * result = blok_list_allocate(a, argc);
                 for(int32_t i = 0; i < argc; ++i) {
-                    blok_list_append(result, blok_evaluator_eval(b, argv[i]));
+                    blok_list_append(result, blok_evaluator_eval(a, b, argv[i]));
                 }
                 return blok_obj_from_list(result);
             }
@@ -1110,11 +1123,11 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
                 assert(argc >= 3);
                 blok_Obj name = argv[0];
                 blok_List * params = blok_list_from_obj(argv[1]);
-                blok_List * body = blok_list_allocate(4);
+                blok_List * body = blok_list_allocate(a, 4);
                 for(int i = 2; i < argc; ++i) {
                     blok_list_append(body, argv[i]);
                 }
-                blok_scope_bind(b, *blok_symbol_from_obj(name), blok_make_function(params, body));
+                blok_scope_bind(a, b, *blok_symbol_from_obj(name), blok_make_function(a, params, body));
 
                 return blok_make_nil();
 
@@ -1122,21 +1135,21 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
             }
         case BLOK_PRIMITIVE_EQUAL:
             assert(argc == 2);
-            return blok_obj_equal(blok_evaluator_eval(b, argv[0]),
-                                  blok_evaluator_eval(b, argv[1]))
+            return blok_obj_equal(blok_evaluator_eval(a, b, argv[0]),
+                                  blok_evaluator_eval(a, b, argv[1]))
                        ? blok_make_true()
                        : blok_make_false();
         case BLOK_PRIMITIVE_WHEN:
             {
                 assert(argc >= 2);
-                blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+                blok_Obj cond = blok_evaluator_eval(a, b, argv[0]);
                 if(cond.tag == BLOK_TAG_FALSE) {
                     return blok_make_nil();
                 } else {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
                         //blok_obj_free(result);
-                        result = blok_evaluator_eval(b, argv[i]);
+                        result = blok_evaluator_eval(a, b, argv[i]);
                     }
                     return result;
                 }
@@ -1144,12 +1157,12 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
         case BLOK_PRIMITIVE_UNLESS:
             {
                 assert(argc >= 2);
-                blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+                blok_Obj cond = blok_evaluator_eval(a, b, argv[0]);
                 if(cond.tag == BLOK_TAG_FALSE) {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
                         //blok_obj_free(result);
-                        result = blok_evaluator_eval(b, argv[i]);
+                        result = blok_evaluator_eval(a, b, argv[i]);
                     }
                     return result;
                 } else {
@@ -1158,25 +1171,25 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
             }
         case BLOK_PRIMITIVE_IF:
             assert(argc >= 3);
-            blok_Obj cond = blok_evaluator_eval(b, argv[0]);
+            blok_Obj cond = blok_evaluator_eval(a, b, argv[0]);
             if(cond.tag == BLOK_TAG_FALSE) {
-                return blok_evaluator_eval(b, argv[2]);
+                return blok_evaluator_eval(a, b, argv[2]);
             } else {
-                return blok_evaluator_eval(b, argv[1]);
+                return blok_evaluator_eval(a, b, argv[1]);
             }
         case BLOK_PRIMITIVE_SET:
             assert(argc == 2 && "Expects key then value");
             blok_Symbol sym = *blok_symbol_from_obj(argv[0]);
-            blok_Obj * old = blok_scope_lookup(b, sym);
-            if(old == NULL) {
+            blok_Obj old = blok_scope_lookup(a, b, sym);
+            if(old.tag == BLOK_TAG_NIL) {
                 fatal_error(NULL, "Undefined symbol: %s", sym.buf);
             }
-            blok_scope_bind(b, sym, blok_obj_copy(argv[1]));
+            blok_scope_bind(a, b, sym, argv[1]);
         case BLOK_PRIMITIVE_AND:
             {
                 assert(argc == 2);
-                blok_Obj lhs = blok_evaluator_eval(b, argv[0]);
-                blok_Obj rhs = blok_evaluator_eval(b, argv[1]);
+                blok_Obj lhs = blok_evaluator_eval(a, b, argv[0]);
+                blok_Obj rhs = blok_evaluator_eval(a, b, argv[1]);
                 return blok_make_boolean(lhs.tag != BLOK_TAG_FALSE &&
                                          rhs.tag != BLOK_TAG_FALSE);
             }
@@ -1185,55 +1198,55 @@ blok_Obj blok_evaluator_apply_primitive(blok_Scope *b, blok_Primitive prim,
             if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
                 fatal_error(NULL, "Cannot compare non-integer values");
             }
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data >
-                                     blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_boolean(blok_evaluator_eval(a, b, argv[0]).as.data >
+                                     blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_GTE:
             assert(argc == 2);
             if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
                 fatal_error(NULL, "Cannot compare non-integer values");
             }
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data >=
-                                     blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_boolean(blok_evaluator_eval(a, b, argv[0]).as.data >=
+                                     blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_LT:
             assert(argc == 2);
             if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
                 fatal_error(NULL, "Cannot compare non-integer values");
             }
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data <
-                                     blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_boolean(blok_evaluator_eval(a, b, argv[0]).as.data <
+                                     blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_LTE:
             assert(argc == 2);
             if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) {
                 fatal_error(NULL, "Cannot compare non-integer values");
             }
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data <
-                                     blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_boolean(blok_evaluator_eval(a, b, argv[0]).as.data <
+                                     blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_NOT:
             assert(argc == 1);
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
+            return blok_make_boolean(blok_evaluator_eval(a, b, argv[0]).tag == BLOK_TAG_FALSE ? true
                                                                    : false);
         case BLOK_PRIMITIVE_ADD:
             assert(argc == 2);
-            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data +
-                                 blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_int(blok_evaluator_eval(a, b, argv[0]).as.data +
+                                 blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_SUB:
             assert(argc == 2);
-            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data -
-                                 blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_int(blok_evaluator_eval(a, b, argv[0]).as.data -
+                                 blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_MUL:
             assert(argc == 2);
-            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data *
-                                 blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_int(blok_evaluator_eval(a, b, argv[0]).as.data *
+                                 blok_evaluator_eval(a, b, argv[1]).as.data);
         case BLOK_PRIMITIVE_DIV:
             assert(argc == 2);
-            return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data /
-                                 blok_evaluator_eval(b, argv[1]).as.data);
+            return blok_make_int(blok_evaluator_eval(a, b, argv[0]).as.data /
+                                 blok_evaluator_eval(a, b, argv[1]).as.data);
     }
 
     return blok_make_nil();
 }
 
-blok_Obj blok_evaluator_apply_list(blok_Scope * b, blok_List * list) {
+blok_Obj blok_evaluator_apply_list(blok_Arena * a, blok_Bindings * b,  blok_List * list) {
     /*
     (void)b;
     (void)sym;
@@ -1245,11 +1258,11 @@ blok_Obj blok_evaluator_apply_list(blok_Scope * b, blok_List * list) {
     if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
-    blok_Obj fn = blok_evaluator_eval(b, list->items[0]);
+    blok_Obj fn = blok_evaluator_eval(a, b, list->items[0]);
     if(fn.tag == BLOK_TAG_PRIMITIVE) {
-        return blok_evaluator_apply_primitive(b, fn.as.data, list->len - 1, &list->items[1]);
+        return blok_evaluator_apply_primitive(a, b, fn.as.data, list->len - 1, &list->items[1]);
     } else if(fn.tag == BLOK_TAG_FUNCTION) {
-        return blok_evaluator_apply_function(b, fn.as.ptr, list->len - 1, &list->items[1]);
+        return blok_evaluator_apply_function(a, b, fn.as.ptr, list->len - 1, &list->items[1]);
         fatal_error(NULL, "TODO implement functions");
     } else {
         printf("\n\nEvaluated ");
@@ -1263,7 +1276,7 @@ blok_Obj blok_evaluator_apply_list(blok_Scope * b, blok_List * list) {
     return blok_make_nil();
 }
 
-blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
+blok_Obj blok_evaluator_eval(blok_Arena * a, blok_Bindings * b, blok_Obj obj) {
     (void)b;
     switch(obj.tag) {
         case BLOK_TAG_NIL:
@@ -1273,14 +1286,14 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
         case BLOK_TAG_SYMBOL:
             {
 
-                assert(blok_scope_lookup(b, blok_symbol_from_char_ptr("print"))->as.data == BLOK_PRIMITIVE_PRINT);
+                assert(blok_scope_lookup(b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
                 blok_Symbol direct = *sym;
-                blok_Obj * value = blok_scope_lookup(b, direct);
-                if(value == NULL) {
+                blok_Obj value = blok_scope_lookup(a, b, direct);
+                if(value.tag == BLOK_TAG_NIL) {
                     fatal_error(NULL, "tried to evaluate null symbol");
                 }
-                return *value;
+                return value;
             }
         case BLOK_TAG_LIST:
             {
@@ -1289,13 +1302,13 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 printf("\n");*/
                 fflush(stdout);
                 blok_List * list = blok_list_from_obj(obj);
-                return blok_evaluator_apply_list(b, list);
+                return blok_evaluator_apply_list(a, b, list);
             }
         default:
           fatal_error(NULL,
                       "Support for evaluating this type has not been "
                       "implemented yet: %s",
-                      blok_char_ptr_from_tag(obj.tag));
+                      blok_tag_get_name(obj.tag));
           break;
 
     }
@@ -1304,13 +1317,14 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
 }
 
 int main(void) {
-    blok_Scope global = {0};
-    blok_scope_bind_builtins(&global);
-
+    blok_arena_run_tests();
     blok_table_run_tests();
 
+    blok_Arena global = {0};
+    global.bindings = blok_table_allocate(&global, 32);
+    blok_scope_bind_builtins(&global);
     FILE * fp = fopen("test.lisp", "r");
-    blok_Obj source = blok_reader_read_file(fp);
+    blok_Obj source = blok_reader_read_file(&global, fp);
     /*blok_obj_print(source, BLOK_STYLE_CODE);*/
 
     blok_evaluator_eval(&global, source);
