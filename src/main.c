@@ -13,13 +13,6 @@
 
 #include "arena.c"
 
-
-/* TODO
- * stop manually passing arena to functions that take a blok_Bindings. 
- * The arena pointed to by the bindings table will be fine as an allocator 
- * for locals
- */
-
 void fatal_error(FILE * fp, const char * fmt, ...) {
     if(fp != NULL) {
         const long progress = ftell(fp);
@@ -102,7 +95,6 @@ typedef struct {
 typedef struct {
     blok_Symbol key;
     blok_Obj value;
-    blok_Arena * arena;
 } blok_KeyValue;
 
 typedef struct {
@@ -635,6 +627,7 @@ void blok_table_run_tests(void) {
 }
 
 blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
+
 blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * const list) {
     blok_List * result = blok_list_allocate(destination_scope, list->len);
     for(int32_t i = 0; i < list->len; ++i) {
@@ -656,6 +649,12 @@ blok_Symbol * blok_symbol_copy(blok_Arena * destination_scope, blok_Symbol const
     return result;
 }
 
+blok_KeyValue * blok_keyvalue_copy(blok_Arena * destination_scope, blok_KeyValue const * const kv) {
+    blok_KeyValue * result  = blok_keyvalue_allocate(destination_scope);
+    result->key = kv->key;
+    result->value = blok_obj_copy(destination_scope, kv->value);
+    return result;
+}
 
 /* All objects use value semantics, so they should be copied when being assigned
  * or passed as parameters
@@ -674,22 +673,8 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
             return blok_obj_from_string(blok_string_copy(destination_scope, blok_string_from_obj(obj)));
         case BLOK_TAG_SYMBOL:
             return blok_obj_from_symbol(blok_symbol_copy(destination_scope, blok_symbol_from_obj(obj)));
-            break;
         case BLOK_TAG_KEYVALUE:
-            /*
-                {
-                blok_KeyValue * kv = blok_keyvalue_from_obj(obj);
-                blok_KeyValue * result = blok_keyvalue_allocate(destination_scope);
-                
-                kv->key = 
-                }
-                */
-            fatal_error(NULL, "TODO");
-            break;
-        case BLOK_TAG_TABLE:
-            fatal_error(NULL, "TODO");
-        case BLOK_TAG_FUNCTION:
-            fatal_error(NULL, "TODO");
+            return blok_obj_from_keyvalue(blok_keyvalue_copy(destination_scope, blok_keyvalue_from_obj(obj)));
     }
     return blok_make_nil();
 }
