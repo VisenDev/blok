@@ -37,7 +37,7 @@ void * blok_arena_alloc(blok_Arena * a, size_t bytes) {
     if(a->cap == 0) {
         assert(a->len == 0);
         assert(a->regions == NULL);
-        a->cap = 2;
+        a->cap = 4;
         a->regions = malloc(sizeof(blok_Region) * a->cap);
     } else if(a->len + 1 >= a->cap) {
         a->cap = a->cap * 2 + 1;
@@ -53,9 +53,11 @@ void * blok_arena_realloc(blok_Arena * a, void * ptr, size_t bytes) {
         blok_Region * region = &a->regions[i];
         if(region->ptr == ptr) {
             assert(region->active);
-            region->cap = bytes;
-            region->ptr = realloc(region->ptr, region->cap);  
-            return region->ptr;
+            assert(region->cap <= bytes);
+            region->active = false;
+            char * mem = blok_arena_alloc(a, bytes);
+            memcpy(mem, region->ptr, region->cap);
+            return mem;
         }
     }
     assert(0 && "Tried to realloc unknown ptr");
@@ -97,5 +99,11 @@ void blok_arena_run_tests(void) {
     blok_arena_reclaim(&a, mem);
     char * mem3 = blok_arena_alloc(&a, 8);
     assert(mem3 == mem);
+    char * mem4 = blok_arena_realloc(&a, mem3, 1000);
+    memset(mem4, 1, 1000);
+    char * mem5 = blok_arena_alloc(&a, 500);
+    blok_arena_reclaim(&a, mem4);
+    mem5 = blok_arena_realloc(&a, mem5, 1000);
+    memset(mem5, 2, 1000);
     blok_arena_free(&a);
 }

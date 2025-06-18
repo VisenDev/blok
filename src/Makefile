@@ -6,7 +6,7 @@ STD= c99
 
 
 main: ${SRC} Makefile arena.c
-	clang ${SRC} -g -O1 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=$(STD) ${MAX_ERRORS_CLANG} -o main
+	clang ${SRC} -g -O0 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -std=$(STD) ${MAX_ERRORS_CLANG} -o main
 
 run: main
 	./main
