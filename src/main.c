@@ -228,11 +228,17 @@ blok_Obj blok_make_boolean(bool cond) {
     return cond ? blok_make_true() : blok_make_false();
 }
 
+blok_Function * blok_function_allocate(blok_Arena * a) {
+    blok_Function * fn = blok_arena_alloc(a, sizeof(blok_Function));
+    memset(fn, 0, sizeof(blok_Function));
+    return fn;
+}
 
-blok_Obj blok_make_function(blok_Arena * b, blok_List * params, blok_List * body) {
-    blok_Function * result = blok_arena_alloc(b, sizeof(blok_Function));
-    result->params = params;
-    result->body = body;
+blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * const list);
+blok_Obj blok_make_function(blok_Arena * a, blok_List * params, blok_List * body) {
+    blok_Function * result = blok_function_allocate(a);
+    result->params = blok_list_copy(a, params);
+    result->body = blok_list_copy(a, body);
     return blok_obj_from_function(result);
 }
 
@@ -422,11 +428,15 @@ blok_Table blok_table_init_capacity(blok_Arena * a, size_t cap) {
     return table;
 }
 
-
-blok_Obj blok_make_table(blok_Arena * a, int32_t cap) {
+blok_Table * blok_table_allocate(blok_Arena * a, size_t cap) {
     blok_Table * ptr = blok_arena_alloc(a, sizeof(blok_Table));
     *ptr = blok_table_init_capacity(a, cap);
-    return blok_obj_from_table(ptr);
+    return ptr;
+}
+
+
+blok_Obj blok_make_table(blok_Arena * a, int32_t cap) {
+    return blok_obj_from_table(blok_table_allocate(a, cap));
 }
 
 blok_KeyValue * blok_table_iterate_next(blok_Table * table) {
@@ -636,23 +646,40 @@ blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * con
     return result;
 }
 
-blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String const * const str) {
+blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String * str) {
     blok_String * result = blok_string_allocate(destination_scope, str->len);
     strncpy(result->ptr, str->ptr, str->len + 1);
     return result;
 }
 
 
-blok_Symbol * blok_symbol_copy(blok_Arena * destination_scope, blok_Symbol const * const sym) {
+blok_Symbol * blok_symbol_copy(blok_Arena * destination_scope, blok_Symbol * sym) {
     blok_Symbol * result = blok_symbol_allocate(destination_scope);
     memcpy(result->buf, sym->buf, sizeof(result->buf));
     return result;
 }
 
-blok_KeyValue * blok_keyvalue_copy(blok_Arena * destination_scope, blok_KeyValue const * const kv) {
+blok_KeyValue * blok_keyvalue_copy(blok_Arena * destination_scope, blok_KeyValue * kv) {
     blok_KeyValue * result  = blok_keyvalue_allocate(destination_scope);
     result->key = kv->key;
     result->value = blok_obj_copy(destination_scope, kv->value);
+    return result;
+}
+
+blok_Table * blok_table_copy(blok_Arena * destination_scope, blok_Table * table) {
+    blok_Table * result = blok_table_allocate(destination_scope, table->cap);
+    blok_table_iterate_start(table);
+    blok_KeyValue * item = NULL;
+    while((item = blok_table_iterate_next(table)) != NULL) {
+        blok_table_set(result, item->key, item->value);
+    }
+    return result;
+}
+
+blok_Function * blok_function_copy(blok_Arena * destination_scope, blok_Function * function) {
+    blok_Function * result = blok_function_allocate(destination_scope);
+    result->body = blok_list_copy(destination_scope, function->body);
+    result->params = blok_list_copy(destination_scope, function->params);
     return result;
 }
 
@@ -675,6 +702,10 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
             return blok_obj_from_symbol(blok_symbol_copy(destination_scope, blok_symbol_from_obj(obj)));
         case BLOK_TAG_KEYVALUE:
             return blok_obj_from_keyvalue(blok_keyvalue_copy(destination_scope, blok_keyvalue_from_obj(obj)));
+        case BLOK_TAG_TABLE:
+            return blok_obj_from_table(blok_table_copy(destination_scope, blok_table_from_obj(obj)));
+        case BLOK_TAG_FUNCTION:
+            return blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
     }
     return blok_make_nil();
 }
