@@ -120,17 +120,9 @@ typedef struct blok_Scope {
 } blok_Scope;
 
 
-
-//void * blok_arena_alloc(blok_Arena * b, size_t bytes) {
-//    return blok_arena_alloc(&b->arena, bytes);
-//}
-//
-//void blok_scope_close(blok_Arena * b) {
-//    blok_arena_free(&b->arena);
-//}
-//void blok_scope_reclaim(blok_Arena * b, void * ptr) {
-//    blok_arena_reclaim(&b->arena, ptr);
-//}
+void blok_scope_close(blok_Scope * b) {
+    blok_arena_free(&b->arena);
+}
 
 
 #define BLOK_PARAMETER_COUNT_MAX 8
@@ -427,6 +419,14 @@ blok_Table blok_table_init_capacity(blok_Arena * a, size_t cap) {
     table.cap = cap;
     table.arena = a;
     return table;
+}
+
+
+blok_Scope blok_scope_open(blok_Scope * parent_scope) {
+    blok_Scope result = {0};
+    result.parent = parent_scope;
+    result.bindings = blok_table_init_capacity(&result.arena, 8);
+    return result;
 }
 
 blok_Table * blok_table_allocate(blok_Arena * a, size_t cap) {
@@ -1104,19 +1104,20 @@ blok_Obj blok_evaluator_apply_function(
         blok_Obj *argv
         ) {
     assert(argc == fn->params->len && "Wrong number of arguments");
-    //TODO support function local bindings
-    //TODO undefine local bindings once done with them
-    blok_Scope * fn_local = {0};
-    fn_local->bindings
+    blok_Scope fn_local = blok_scope_open(b);
 
     for(int32_t i = 0; i < argc; ++i) {
-        blok_scope_bind(b, *blok_symbol_from_obj(fn->params->items[i]), argv[i]);
+      blok_scope_bind(&fn_local, *blok_symbol_from_obj(fn->params->items[i]),
+                      blok_evaluator_eval(b, argv[i]));
     }
     blok_Obj result = blok_make_nil();
     for(int32_t i = 0; i < fn->body->len; ++i) {
-        result = blok_evaluator_eval(b, fn->body->items[i]);
+        result = blok_evaluator_eval(&fn_local, fn->body->items[i]);
     }
-    return result;
+
+    blok_Obj return_value = blok_obj_copy(&b->arena, result);
+    blok_scope_close(&fn_local);
+    return return_value;
 }
 
 blok_Obj blok_evaluator_apply_primitive(
@@ -1233,7 +1234,7 @@ blok_Obj blok_evaluator_apply_primitive(
             return blok_make_boolean(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
                                                                    : false);
 
-#       define BLOK_PRIMITIVE_IMPL_OPERATOR(primitive, operator) \
+#       define BLOK_PRIMITIVE_IMPL_BOOLEAN(primitive, operator) \
             case primitive: \
                 assert(argc == 2); \
                 if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) { \
@@ -1243,10 +1244,21 @@ blok_Obj blok_evaluator_apply_primitive(
                                          operator \
                                          blok_evaluator_eval(b, argv[1]).as.data)
 
-        BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_GT, >);
-        BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_GTE, >=);
-        BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_LT, <);
-        BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_LTE, <=);
+        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_GT, >);
+        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_GTE, >=);
+        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_LT, <);
+        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_LTE, <=);
+
+#       undef BLOK_PRIMITIVE_IMPL_BOOLEAN
+#       define BLOK_PRIMITIVE_IMPL_OPERATOR(primitive, operator) \
+            case primitive: \
+                assert(argc == 2); \
+                if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) { \
+                    fatal_error(NULL, "Cannot use operator on non-integer values"); \
+                } \
+                return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data \
+                                         operator \
+                                         blok_evaluator_eval(b, argv[1]).as.data)
 
         BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_ADD, +);
         BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_SUB, -);

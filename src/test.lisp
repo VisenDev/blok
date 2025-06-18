@@ -1,6 +1,9 @@
 (defun sayhello (name times)
-  (print "Hello, " name "\n")
+  (when (gt times 0)
+    (print "Hello, " name "\n")
+    (sayhello (sub times 1) (sub times 1))    
+    (print "Goodbye, " name "\n")
+    )
   )
 
-(print "hello world from print fn" "\n")
-(sayhello bob 3)
+(sayhello "bob" 12)
