@@ -41,8 +41,7 @@ typedef enum {
     BLOK_TAG_SYMBOL,
     BLOK_TAG_TABLE,
     BLOK_TAG_FUNCTION,
-    BLOK_TAG_TRUE,
-    BLOK_TAG_FALSE,
+    BLOK_TAG_BOOL,
 } blok_Tag;
 
 
@@ -58,8 +57,7 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_SYMBOL:    return "BLOK_TAG_SYMBOL";
         case BLOK_TAG_TABLE:     return "BLOK_TAG_TABLE";
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
-        case BLOK_TAG_TRUE:      return "BLOK_TAG_TRUE";
-        case BLOK_TAG_FALSE:     return "BLOK_TAG_FALSE";
+        case BLOK_TAG_BOOL:     return "BLOK_TAG_BOOL";
     }
 }
 
@@ -156,6 +154,7 @@ typedef enum {
     BLOK_PRIMITIVE_MOD,
     BLOK_PRIMITIVE_IF,
     BLOK_PRIMITIVE_UNLESS,
+    BLOK_PRIMITIVE_ASSERT,
 } blok_Primitive;
 
 
@@ -164,8 +163,7 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
 void * blok_ptr_from_obj(blok_Obj obj) {
     if (obj.tag == BLOK_TAG_INT
     ||  obj.tag == BLOK_TAG_NIL
-    ||  obj.tag == BLOK_TAG_FALSE
-    ||  obj.tag == BLOK_TAG_TRUE
+    ||  obj.tag == BLOK_TAG_BOOL
     ||  obj.tag == BLOK_TAG_PRIMITIVE) {
         fatal_error(NULL,
                 "You tried to get the pointer out of a type that does not "
@@ -212,12 +210,12 @@ blok_Obj blok_make_nil(void) {
     return (blok_Obj){.tag = BLOK_TAG_NIL};
 }
 blok_Obj blok_make_true(void) {
-    return (blok_Obj){.tag = BLOK_TAG_TRUE};
+    return (blok_Obj){.tag = BLOK_TAG_BOOL, .as.data = 1};
 }
 blok_Obj blok_make_false(void) {
-    return (blok_Obj){.tag = BLOK_TAG_FALSE};
+    return (blok_Obj){.tag = BLOK_TAG_BOOL, .as.data = 0};
 }
-blok_Obj blok_make_boolean(bool cond) {
+blok_Obj blok_make_bool(bool cond) {
     return cond ? blok_make_true() : blok_make_false();
 }
 
@@ -695,8 +693,7 @@ blok_Function * blok_function_copy(blok_Arena * destination_scope, blok_Function
  */
 blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
     switch(obj.tag) {
-        case BLOK_TAG_FALSE:
-        case BLOK_TAG_TRUE:
+        case BLOK_TAG_BOOL:
         case BLOK_TAG_NIL:
         case BLOK_TAG_PRIMITIVE:
         case BLOK_TAG_INT:
@@ -1086,6 +1083,7 @@ void blok_scope_bind_builtins(blok_Scope * b) {
     BLOK_BIND_PRIMITIVE(b, "div", BLOK_PRIMITIVE_DIV);
     BLOK_BIND_PRIMITIVE(b, "unless", BLOK_PRIMITIVE_UNLESS);
     BLOK_BIND_PRIMITIVE(b, "if", BLOK_PRIMITIVE_IF);
+    BLOK_BIND_PRIMITIVE(b, "assert", BLOK_PRIMITIVE_ASSERT);
 
 #   undef BLOK_BIND_PRIMITIVE
 
@@ -1226,35 +1224,43 @@ blok_Obj blok_evaluator_apply_primitive(
                 assert(argc == 2);
                 blok_Obj lhs = blok_evaluator_eval(b, argv[0]);
                 blok_Obj rhs = blok_evaluator_eval(b, argv[1]);
-                return blok_make_boolean(lhs.tag != BLOK_TAG_FALSE &&
+                return blok_make_bool(lhs.tag != BLOK_TAG_FALSE &&
                                          rhs.tag != BLOK_TAG_FALSE);
             }
         case BLOK_PRIMITIVE_NOT:
             assert(argc == 1);
-            return blok_make_boolean(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
+            return blok_make_bool(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
                                                                    : false);
+        case BLOK_PRIMITIVE_ASSERT:
+            assert(argc == 1);
+            if(blok_evaluator_eval(b, argv[0]).tag != BLOK_TAG_FALSE) {
+                printf("\n\nAssertion Failed: ");
+                blok_obj_print(argv[0], BLOK_STYLE_CODE);
+                fatal_error(NULL, "");
+            }
+            return blok_make_true();
 
-#       define BLOK_PRIMITIVE_IMPL_BOOLEAN(primitive, operator) \
+#       define BLOK_PRIMITIVE_IMPL_BOOL(primitive, operator) \
             case primitive: \
                 assert(argc == 2); \
                 if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) { \
-                    fatal_error(NULL, "Cannot use operator on non-integer values"); \
+                    fatal_error(NULL, "Cannot use mathematical operator on non-integer values"); \
                 } \
-                return blok_make_boolean(blok_evaluator_eval(b, argv[0]).as.data \
+                return blok_make_bool(blok_evaluator_eval(b, argv[0]).as.data \
                                          operator \
                                          blok_evaluator_eval(b, argv[1]).as.data)
 
-        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_GT, >);
-        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_GTE, >=);
-        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_LT, <);
-        BLOK_PRIMITIVE_IMPL_BOOLEAN(BLOK_PRIMITIVE_LTE, <=);
+        BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_GT, >);
+        BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_GTE, >=);
+        BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_LT, <);
+        BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_LTE, <=);
 
-#       undef BLOK_PRIMITIVE_IMPL_BOOLEAN
+#       undef BLOK_PRIMITIVE_IMPL_BOOL
 #       define BLOK_PRIMITIVE_IMPL_OPERATOR(primitive, operator) \
             case primitive: \
                 assert(argc == 2); \
-                if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) { \
-                    fatal_error(NULL, "Cannot use operator on non-integer values"); \
+                if(argv[0].tag != BLOK_TAG_BOOL || argv[1].tag != BLOK_TAG_BOOL) { \
+                    fatal_error(NULL, "Cannot use bool operator on non-integer values"); \
                 } \
                 return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data \
                                          operator \

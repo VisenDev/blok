@@ -1,9 +1,15 @@
-(defun sayhello (name times)
-  (when (gt times 0)
-    (print "Hello, " name "\n")
-    (sayhello (sub times 1) (sub times 1))    
-    (print "Goodbye, " name "\n")
+
+(defun test (arg)
+  (if (equal arg 1) 
+    (print arg " is one\n")
+    (print arg " is not one\n")
     )
   )
 
-(sayhello "bob" 12)
+(defun fac (num)
+  (add num num)
+  )
+
+(test 1)
+(test 2)
+(print (fac 10))
