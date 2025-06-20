@@ -464,14 +464,9 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
     */
     assert(table != NULL);
     assert(table->arena != NULL);
+    assert(table->cap > 0);
 
-    if(table->cap <= 0) {
-        table->cap = 8;
-        table->items = blok_arena_alloc(table->arena, sizeof(blok_KeyValue) * table->cap);
-        memset(table->items, 0, sizeof(blok_KeyValue) * table->cap);
-    }
     uint64_t i = blok_hash(key) % (table->cap - 1);
-    assert(i >= 0);
     assert(i < table->cap);
 
     const uint64_t start = i;
@@ -479,16 +474,18 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
         blok_KeyValue kv = table->items[i];
         if(blok_symbol_equal(kv.key, key)) {
             return &table->items[i];
-        }
-        if(blok_symbol_empty(kv.key)) {
+        } else if(blok_symbol_empty(kv.key)) {
             return &table->items[i];
+        } else {
+            ++i;
+            i = i % table->cap;
         }
+    } while(i != start);
+    return NULL;
+}
 
-
-        ++i;
-        i = i % table->cap;
-        if(i == start) return NULL;
-    } while(1);
+bool blok_table_contains_key(blok_Table * table, blok_Symbol key) {
+    return blok_table_find_slot(table, key) == NULL;
 }
 
 blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok_Symbol key) {
@@ -532,13 +529,9 @@ blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
         slot[i].key := key
         slot[i].value := value
     */
+
     assert(table->arena != NULL);
     assert(table->cap != 0);
-
-    /*
-     if(table->cap == 0) {
-        *table = blok_table_init_capacity(b, 8);
-    } */
 
     if(table->count + 1 > table->cap / 3) {
         blok_table_rehash(table, table->cap * 3);
@@ -1048,8 +1041,24 @@ blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_
     return result;
 }
 
+bool blok_scope_symbol_bound(blok_Scope * b, blok_Symbol sym) {
+    for(;b != NULL; b = b->parent) {
+        if(blok_table_contains_key(&b->bindings, sym)) return true;
+    }
+    return false;
+}
+
 void blok_scope_bind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
-    /*TODO check if symbol is already defined*/
+    if(blok_scope_symbol_bound(b, sym)) {
+        fatal_error(NULL, "Symbol already bound: %s", sym.buf);
+    }
+    blok_table_set(&b->bindings, sym, value);
+}
+
+void blok_scope_rebind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
+    if(blok_scope_symbol_bound(b, sym)) {
+        fatal_error(NULL, "Symbol is unbound: %s", sym.buf);
+    }
     blok_table_set(&b->bindings, sym, value);
 }
 
@@ -1218,9 +1227,6 @@ blok_Obj blok_evaluator_apply_primitive(
                 assert(argc == 2 && "Expects key then value");
                 blok_Symbol * sym = blok_symbol_from_obj(argv[0]);
                 blok_Obj val = blok_evaluator_eval(b, argv[1]);
-                //printf("(set %s ", sym->buf);
-                //blok_obj_print(val, BLOK_STYLE_CODE);
-                //printf(")\n");
                 blok_scope_bind(b, *sym, val);
                 return val;
             }
