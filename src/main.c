@@ -155,6 +155,7 @@ typedef enum {
     BLOK_PRIMITIVE_IF,
     BLOK_PRIMITIVE_UNLESS,
     BLOK_PRIMITIVE_ASSERT,
+    BLOK_PRIMITIVE_WHILE,
 } blok_Primitive;
 
 
@@ -497,7 +498,6 @@ blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok
     } else if(blok_symbol_empty(kv->key)) {
         return blok_make_nil();
     } else {
-        //TODO actually copy this value
         return blok_obj_copy(destination_scope, kv->value);
     }
 }
@@ -515,9 +515,6 @@ void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
             blok_table_set(&new, item.key, item.value);
         }
     }
-    //TODO examine closely memory management in this function
-    //blok_scope_reclaim(table->items);
-    //blok_scope_reclaim(b, new_ptr);
     *table = new;
 }
 
@@ -818,7 +815,6 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
                 for(int i = 0; i < list->len; ++i) {
                     if(i != 0) printf(" ");
                     blok_obj_print(list->items[i], style);
-                    fflush(stdout);
                 }
                 printf(")");
             }
@@ -831,7 +827,6 @@ void blok_obj_print(blok_Obj obj, blok_Style style) {
                 case BLOK_STYLE_CODE:
                 printf("\"");
                 blok_String * str = blok_string_from_obj(obj);
-                /*TODO, there is some sort of memory bug going on here, I need to figure out what*/
                 blok_print_escape_sequences(str->ptr, 32);
                 printf("\"");
                 break;
@@ -1084,6 +1079,8 @@ void blok_scope_bind_builtins(blok_Scope * b) {
     BLOK_BIND_PRIMITIVE(b, "unless", BLOK_PRIMITIVE_UNLESS);
     BLOK_BIND_PRIMITIVE(b, "if", BLOK_PRIMITIVE_IF);
     BLOK_BIND_PRIMITIVE(b, "assert", BLOK_PRIMITIVE_ASSERT);
+    BLOK_BIND_PRIMITIVE(b, "while", BLOK_PRIMITIVE_WHILE);
+    BLOK_BIND_PRIMITIVE(b, "set", BLOK_PRIMITIVE_SET);
 
 #   undef BLOK_BIND_PRIMITIVE
 
@@ -1177,78 +1174,119 @@ blok_Obj blok_evaluator_apply_primitive(
             {
                 assert(argc >= 2);
                 blok_Obj cond = blok_evaluator_eval(b, argv[0]);
-                if(cond.tag == BLOK_TAG_FALSE) {
-                    return blok_make_nil();
-                } else {
+                if(cond.tag != BLOK_TAG_BOOL) {
+                    fatal_error(NULL, "Expected a boolean");
+                } else if(cond.as.data) {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
-                        //blok_obj_free(result);
                         result = blok_evaluator_eval(b, argv[i]);
                     }
                     return result;
+                } else {
+                    return blok_make_nil();
                 }
             }
         case BLOK_PRIMITIVE_UNLESS:
             {
+
                 assert(argc >= 2);
                 blok_Obj cond = blok_evaluator_eval(b, argv[0]);
-                if(cond.tag == BLOK_TAG_FALSE) {
+                if(cond.tag != BLOK_TAG_BOOL) {
+                    fatal_error(NULL, "Expected a boolean");
+                } else if(!cond.as.data) {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
-                        //blok_obj_free(result);
                         result = blok_evaluator_eval(b, argv[i]);
                     }
                     return result;
                 } else {
                     return blok_make_nil();
-                } 
+                }
             }
         case BLOK_PRIMITIVE_IF:
             assert(argc >= 3);
             blok_Obj cond = blok_evaluator_eval(b, argv[0]);
-            if(cond.tag == BLOK_TAG_FALSE) {
-                return blok_evaluator_eval(b, argv[2]);
-            } else {
+            if(cond.tag != BLOK_TAG_BOOL) {
+                fatal_error(NULL, "Expected a boolean");
+            } else if(cond.as.data) {
                 return blok_evaluator_eval(b, argv[1]);
+            } else {
+                return blok_evaluator_eval(b, argv[2]);
             }
         case BLOK_PRIMITIVE_SET:
-            assert(argc == 2 && "Expects key then value");
-            blok_Symbol sym = *blok_symbol_from_obj(argv[0]);
-            blok_Obj old = blok_scope_lookup(&b->arena, b, sym);
-            if(old.tag == BLOK_TAG_NIL) {
-                fatal_error(NULL, "Undefined symbol: %s", sym.buf);
+            {
+                assert(argc == 2 && "Expects key then value");
+                blok_Symbol * sym = blok_symbol_from_obj(argv[0]);
+                blok_Obj val = blok_evaluator_eval(b, argv[1]);
+                //printf("(set %s ", sym->buf);
+                //blok_obj_print(val, BLOK_STYLE_CODE);
+                //printf(")\n");
+                blok_scope_bind(b, *sym, val);
+                return val;
             }
-            blok_scope_bind(b, sym, argv[1]);
         case BLOK_PRIMITIVE_AND:
             {
                 assert(argc == 2);
                 blok_Obj lhs = blok_evaluator_eval(b, argv[0]);
                 blok_Obj rhs = blok_evaluator_eval(b, argv[1]);
-                return blok_make_bool(lhs.tag != BLOK_TAG_FALSE &&
-                                         rhs.tag != BLOK_TAG_FALSE);
+                if(lhs.tag != BLOK_TAG_BOOL || rhs.tag != BLOK_TAG_BOOL) {
+                    printf("(and ");
+                    blok_obj_print(lhs, BLOK_STYLE_CODE);
+                    printf(" ");
+                    blok_obj_print(rhs, BLOK_STYLE_CODE);
+                    printf(")\n");
+                    fflush(stdout);
+                    fatal_error(NULL, "expected two booleans for 'and'");
+                }
+                return blok_make_bool(lhs.as.data && rhs.as.data);
             }
         case BLOK_PRIMITIVE_NOT:
-            assert(argc == 1);
-            return blok_make_bool(blok_evaluator_eval(b, argv[0]).tag == BLOK_TAG_FALSE ? true
-                                                                   : false);
+            {
+                assert(argc == 1);
+                blok_Obj val = blok_evaluator_eval(b, argv[0]);
+                if(val.tag != BLOK_TAG_BOOL) {
+                    fatal_error(NULL, "Cannot NOT a non-boolean");
+                }
+                return blok_make_bool(!val.as.data);
+            }
+
+        case BLOK_PRIMITIVE_WHILE:
+            {
+                assert(argc >= 1);
+                blok_Obj result = blok_make_nil();
+                while(blok_evaluator_eval(b, argv[0]).as.data) {
+                    for(int32_t i = 1; i < argc; ++i) {
+                        result = blok_evaluator_eval(b, argv[i]);
+                    }
+                }
+                return result;
+            }
         case BLOK_PRIMITIVE_ASSERT:
             assert(argc == 1);
-            if(blok_evaluator_eval(b, argv[0]).tag != BLOK_TAG_FALSE) {
-                printf("\n\nAssertion Failed: ");
-                blok_obj_print(argv[0], BLOK_STYLE_CODE);
-                fatal_error(NULL, "");
+            {
+                blok_Obj val = blok_evaluator_eval(b, argv[0]);
+                if(val.tag != BLOK_TAG_BOOL) {
+                    fatal_error(NULL, "Expected a boolean inside the assert");
+                }
+                if(!val.as.data) {
+                    printf("\n\nAssertion Failed: ");
+                    blok_obj_print(argv[0], BLOK_STYLE_CODE);
+                    fatal_error(NULL, "");
+                }
+                return blok_make_true();
             }
-            return blok_make_true();
 
 #       define BLOK_PRIMITIVE_IMPL_BOOL(primitive, operator) \
             case primitive: \
-                assert(argc == 2); \
-                if(argv[0].tag != BLOK_TAG_INT && argv[1].tag != BLOK_TAG_INT) { \
-                    fatal_error(NULL, "Cannot use mathematical operator on non-integer values"); \
-                } \
-                return blok_make_bool(blok_evaluator_eval(b, argv[0]).as.data \
-                                         operator \
-                                         blok_evaluator_eval(b, argv[1]).as.data)
+                { \
+                    assert(argc == 2); \
+                    blok_Obj lhs = blok_evaluator_eval(b, argv[0]); \
+                    blok_Obj rhs = blok_evaluator_eval(b, argv[1]); \
+                    /*if(lhs.tag != BLOK_TAG_BOOL || rhs.tag != BLOK_TAG_BOOL) { \
+                        fatal_error(NULL, "Cannot use boolean operator on non-boolean values"); \
+                    } \*/ \
+                    return blok_make_bool(lhs.as.data operator rhs.as.data); \
+                }
 
         BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_GT, >);
         BLOK_PRIMITIVE_IMPL_BOOL(BLOK_PRIMITIVE_GTE, >=);
@@ -1258,13 +1296,22 @@ blok_Obj blok_evaluator_apply_primitive(
 #       undef BLOK_PRIMITIVE_IMPL_BOOL
 #       define BLOK_PRIMITIVE_IMPL_OPERATOR(primitive, operator) \
             case primitive: \
-                assert(argc == 2); \
-                if(argv[0].tag != BLOK_TAG_BOOL || argv[1].tag != BLOK_TAG_BOOL) { \
-                    fatal_error(NULL, "Cannot use bool operator on non-integer values"); \
-                } \
-                return blok_make_int(blok_evaluator_eval(b, argv[0]).as.data \
-                                         operator \
-                                         blok_evaluator_eval(b, argv[1]).as.data)
+                { \
+                    assert(argc == 2); \
+                    blok_Obj lhs = blok_evaluator_eval(b, argv[0]); \
+                    blok_Obj rhs = blok_evaluator_eval(b, argv[1]); \
+                    if(lhs.tag != BLOK_TAG_INT || rhs.tag != BLOK_TAG_INT) { \
+                        printf("Cannot perform " ); \
+                        printf("(%s ", #operator); \
+                        blok_obj_print(lhs, BLOK_STYLE_CODE); \
+                        printf(" "); \
+                        blok_obj_print(rhs, BLOK_STYLE_CODE); \
+                        printf(")"); \
+                        fflush(stdout); \
+                        fatal_error(NULL, ""); \
+                    } \
+                    return blok_make_int(lhs.as.data operator rhs.as.data); \
+                }
 
         BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_ADD, +);
         BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_SUB, -);
@@ -1273,20 +1320,14 @@ blok_Obj blok_evaluator_apply_primitive(
         BLOK_PRIMITIVE_IMPL_OPERATOR(BLOK_PRIMITIVE_MOD, %);
 
 #       undef BLOK_PRIMITIVE_IMPL_OPERATOR
+
+
     }
 
     return blok_make_nil();
 }
 
 blok_Obj blok_evaluator_apply_list(blok_Scope * b,  blok_List * list) {
-    /*
-    (void)b;
-    (void)sym;
-    (void)argc;
-    (void)argv;
-    */
-
-
     if(list->len <= 0) {
         fatal_error(NULL, "cannot apply empty list");
     }
@@ -1295,7 +1336,6 @@ blok_Obj blok_evaluator_apply_list(blok_Scope * b,  blok_List * list) {
         return blok_evaluator_apply_primitive(b, fn.as.data, list->len - 1, &list->items[1]);
     } else if(fn.tag == BLOK_TAG_FUNCTION) {
         return blok_evaluator_apply_function(b, fn.as.ptr, list->len - 1, &list->items[1]);
-        fatal_error(NULL, "TODO implement functions");
     } else {
         printf("\n\nEvaluated ");
         blok_obj_print(list->items[0], BLOK_STYLE_CODE);
@@ -1325,7 +1365,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 blok_Symbol direct = *sym;
                 blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
                 if(value.tag == BLOK_TAG_NIL) {
-                    fatal_error(NULL, "tried to evaluate null symbol");
+                    fatal_error(NULL, "tried to evaluate null symbol: %s", sym->buf);
                 }
                 return value;
             }

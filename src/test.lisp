@@ -1,15 +1,9 @@
-
-(defun test (arg)
-  (if (equal arg 1) 
-    (print arg " is one\n")
-    (print arg " is not one\n")
+(defun test (num)
+  (when (gte num 0)
+    (print num " ")
+    (test (sub num 1))
     )
   )
 
-(defun fac (num)
-  (add num num)
-  )
 
-(test 1)
-(test 2)
-(print (fac 10))
+(test 1000)
