@@ -61,7 +61,10 @@ const char * blok_tag_get_name(blok_Tag tag) {
     }
 }
 
-
+typedef struct {
+    int line;
+    char * file;
+} blok_SourceInfo;
 
 typedef struct {
     blok_Tag tag; 
@@ -69,6 +72,9 @@ typedef struct {
         void * ptr;
         int data;
     } as;
+
+    /*debugging info*/
+    blok_SourceInfo src_info;
 } blok_Obj;
 
 typedef struct { 
@@ -850,63 +856,88 @@ void blok_print_as_bytes(blok_Obj obj) {
 
 
 /* READER */
+typedef struct {
+    FILE * fp;
+    int line;
+    char const * name;
+} blok_Reader;
 
 bool blok_reader_is_whitespace(char ch) {
     return ch == ' ' || ch == '\n' || ch == '\t';
 }
 
-char blok_reader_peek(FILE * fp) {
-    char ch = fgetc(fp);
-    ungetc(ch, fp);
+char blok_reader_getc(blok_Reader * r) {
+    char ch = fgetc(r->fp);
+    if(ch == '\n') {
+        ++r->line;
+    }
     return ch;
 }
 
-void blok_reader_skip_whitespace(FILE * fp) {
-    if(feof(fp)) return;
-    while(blok_reader_is_whitespace(blok_reader_peek(fp))) getc(fp);
+bool blok_reader_eof(blok_Reader * r) {
+    return feof(r->fp);
 }
 
-blok_Obj blok_reader_parse_int(FILE * fp) {
-    assert(isdigit(blok_reader_peek(fp)));
+char blok_reader_peek(blok_Reader * r) {
+    char ch = fgetc(r->fp);
+    ungetc(ch, r->fp);
+    return ch;
+}
+
+void blok_reader_skip_whitespace(blok_Reader * r) {
+    if(blok_reader_eof(r)) return;
+    while(blok_reader_is_whitespace(blok_reader_peek(r))) blok_reader_getc(r);
+}
+
+void blok_reader_skip_char(blok_Reader * r, char expected) {
+    char ch = blok_reader_getc(r);
+    if(ch != expected) {
+        fatal_error(r->fp, "Reader expected '%c', got '%c'", expected, ch);
+    }
+}
+
+int blok_reader_parse_int(blok_Reader * r) {
+    assert(isdigit(blok_reader_peek(r)));
     char buf[1024] = {0};
-    int i = 0;
-    while(isdigit(blok_reader_peek(fp))) buf[i++] = fgetc(fp);
+    size_t i = 0;
+    while(isdigit(blok_reader_peek(r))) {
+        buf[i++] = blok_reader_getc(r);
+        assert(i < sizeof(buf));
+    }
     char * end;
     errno = 0;
     const long num = strtol(buf, &end, 10);
     if(errno != 0) {
-        fatal_error(fp, "Failed to parse integer");
+        fatal_error(r->fp, "Failed to parse integer, errno: %n", errno);
     }
-    return blok_make_int(num);
+    return num;
 }
+
 
 #define BLOK_READER_STATE_BASE 0
 #define BLOK_READER_STATE_ESCAPE 1
 
-blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
-    assert(blok_reader_peek(fp) == '"');
-    fgetc(fp);
+blok_String * blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
+    blok_reader_skip_char(r, '"');
     int state = BLOK_READER_STATE_BASE;
     blok_String * str = blok_string_allocate(b, 8);
     while(1) {
-        char ch = blok_reader_peek(fp);
-        if(feof(fp)) fatal_error(fp, "Unexpected end of file");
+        char ch = blok_reader_peek(r);
+        if(blok_reader_eof(r)) fatal_error(r->fp, "Unexpected end of file when parsing string");
         switch(state) {
             case BLOK_READER_STATE_BASE:
                 if(ch == '\\') {
                     state = BLOK_READER_STATE_ESCAPE;
                 } else if (ch == '"') {
-                    fgetc(fp);
-
-                    return blok_obj_from_string(str);
+                    blok_reader_skip_char(r, '"');
+                    return str;
                 } else {
-                    blok_string_append(str, fgetc(fp));
+                    blok_string_append(str, blok_reader_getc(r));
                 }
                 break;
             case BLOK_READER_STATE_ESCAPE:
-                assert(blok_reader_peek(fp) == '\\');
-                fgetc(fp);
-                char escape = fgetc(fp);
+                blok_reader_skip_char(r, '\\');
+                char escape = blok_reader_getc(r);
                 switch(escape) {
                     case 'n':
                         blok_string_append(str, '\n');
@@ -930,10 +961,9 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, FILE * fp) {
     }
 }
 
-bool blok_is_symbol_char(char ch) {
+bool blok_reader_is_symbol_char(char ch) {
     return ch == '_' || isalpha(ch) || isdigit(ch);
 }
-
 
 blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp);
 
