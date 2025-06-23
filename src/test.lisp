@@ -5,5 +5,6 @@
     )
   )
 
-
-(test 1000)
+(defun main()
+  (test 1000)
+  )

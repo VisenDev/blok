@@ -13,14 +13,29 @@
 
 #include "arena.c"
 
-void fatal_error(FILE * fp, const char * fmt, ...) {
-    if(fp != NULL) {
-        const long progress = ftell(fp);
-        rewind(fp);
-        while(ftell(fp) < progress) {
-            fprintf(stderr, "%c", fgetc(fp));
-        }
-        fprintf(stderr, "\n\n");
+#define BLOK_NORETURN __attribute__((noreturn))
+
+BLOK_NORETURN 
+void blok_abort(void) {
+    fflush(stdout);
+    fflush(stderr);
+    abort();
+}
+
+
+typedef struct {
+    int line;
+    char const * file;
+} blok_SourceInfo;
+
+void blok_print_sourceinfo(FILE * fp, blok_SourceInfo src_info) {
+    fprintf(fp, "%s:%d", src_info.file, src_info.line); 
+}
+
+BLOK_NORETURN 
+void blok_fatal_error(blok_SourceInfo * src_info, const char * restrict fmt, ...) {
+    if(src_info != NULL) {
+        blok_print_sourceinfo(stderr, *src_info);
     }
     va_list args;
     va_start(args, fmt);
@@ -28,7 +43,7 @@ void fatal_error(FILE * fp, const char * fmt, ...) {
     va_end(args);
     fprintf(stderr, "\n");
     fflush(stderr);
-    abort();
+    blok_abort();
 }
 
 typedef enum {
@@ -61,10 +76,6 @@ const char * blok_tag_get_name(blok_Tag tag) {
     }
 }
 
-typedef struct {
-    int line;
-    char const * file;
-} blok_SourceInfo;
 
 typedef struct {
     blok_Tag tag; 
@@ -172,7 +183,7 @@ void * blok_ptr_from_obj(blok_Obj obj) {
     ||  obj.tag == BLOK_TAG_NIL
     ||  obj.tag == BLOK_TAG_BOOL
     ||  obj.tag == BLOK_TAG_PRIMITIVE) {
-        fatal_error(NULL,
+        blok_fatal_error(NULL,
                 "You tried to get the pointer out of a type that does not "
                 "contain a ptr");
     }
@@ -365,7 +376,7 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
                         *blok_symbol_from_obj(rhs));
             default: 
                 printf("Tag: %s\n", blok_tag_get_name(lhs.tag));
-                fatal_error(NULL, "Comparison for this tag not implemented yet");
+                blok_fatal_error(NULL, "Comparison for this tag not implemented yet");
                 return false;
         }
     }
@@ -509,7 +520,7 @@ blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
 
 void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     if(new_cap < table->count) {
-        fatal_error(NULL, "new table capacity is smaller than the older one");
+        blok_fatal_error(NULL, "new table capacity is smaller than the older one");
     }
     blok_Table new = blok_table_init_capacity(table->arena, new_cap);
     for(uint64_t i = 0; i < table->cap; ++i) {
@@ -545,7 +556,7 @@ blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
 
     blok_KeyValue * kv = blok_table_find_slot(table, key);
     if (kv == NULL)
-          fatal_error(NULL, "table cannot find slot for key: %s", key.buf);
+          blok_fatal_error(NULL, "table cannot find slot for key: %s", key.buf);
     if(!blok_symbol_empty(kv->key)) {
         assert(blok_symbol_equal(kv->key, key));
         //blok_obj_free(kv->value);
@@ -589,7 +600,7 @@ blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
             mark slot[j] as unoccupied
             i := j
     */
-    fatal_error(NULL, "TODO implement unset");
+    blok_fatal_error(NULL, "TODO implement unset");
     return blok_make_nil();
 }
 
@@ -627,6 +638,7 @@ void blok_table_run_tests(void) {
     assert(table.count == 1);
     assert(table.iterate_i == 0);
     assert(table.items != NULL);
+    (void) value;
 
     blok_arena_free(&a);
 }
@@ -891,7 +903,7 @@ void blok_reader_skip_whitespace(blok_Reader * r) {
 void blok_reader_skip_char(blok_Reader * r, char expected) {
     char ch = blok_reader_getc(r);
     if(ch != expected) {
-        fatal_error(r->fp, "Reader expected '%c', got '%c'", expected, ch);
+        blok_fatal_error(&r->src_info, "Reader expected '%c', got '%c'", expected, ch);
     }
 }
 
@@ -907,7 +919,7 @@ blok_Obj blok_reader_parse_int(blok_Reader * r) {
     errno = 0;
     const long num = strtol(buf, &end, 10);
     if(errno != 0) {
-        fatal_error(r->fp, "Failed to parse integer, errno: %n", errno);
+        blok_fatal_error(&r->src_info, "Failed to parse integer, errno: %n", errno);
     }
     blok_Obj result = blok_make_int(num);
     result.src_info = r->src_info;
@@ -924,7 +936,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
     blok_String * str = blok_string_allocate(b, 8);
     while(1) {
         char ch = blok_reader_peek(r);
-        if(blok_reader_eof(r)) fatal_error(r->fp, "Unexpected end of file when parsing string");
+        if(blok_reader_eof(r)) blok_fatal_error(&r->src_info, "Unexpected end of file when parsing string");
         switch(state) {
             case BLOK_READER_STATE_BASE:
                 if(ch == '\\') {
@@ -955,7 +967,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                         blok_string_append(str, '\'');
                         break;
                     default:
-                        fatal_error(r->fp, "Unknown string escape: \"\\%c\"", escape);
+                        blok_fatal_error(&r->src_info, "Unknown string escape: \"\\%c\"", escape);
                         break;
                 }
                 state = BLOK_READER_STATE_BASE;
@@ -979,7 +991,7 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
     while(blok_reader_is_symbol_char(blok_reader_peek(r))) {
         sym.buf[i++] = blok_reader_getc(r);
         if(i + 2 > sizeof(sym.buf)) {
-            fatal_error(r->fp, "symbol too long, %s\n", sym.buf);
+            blok_fatal_error(&r->src_info, "symbol too long, %s\n", sym.buf);
         }
     }
 
@@ -1026,7 +1038,7 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
     } else if(isalpha(ch)) {
         return blok_reader_parse_symbol(b, r);
     } else {
-        fatal_error(r->fp, "Parsing failed");
+        blok_fatal_error(&r->src_info, "Parsing failed");
     }
     return blok_make_nil();
 }
@@ -1044,7 +1056,7 @@ blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     r.src_info.line = 1;
 
     if(r.fp == NULL) {
-        fatal_error(NULL, "Failed to open file: %s\n", path);
+        blok_fatal_error(NULL, "Failed to open file: %s\n", path);
     }
     blok_list_append(result, blok_make_symbol(a, "progn"));
     blok_reader_skip_whitespace(&r);
@@ -1074,14 +1086,14 @@ bool blok_scope_symbol_bound(blok_Scope * b, blok_Symbol sym) {
 
 void blok_scope_bind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
     if(blok_scope_symbol_bound(b, sym)) {
-        fatal_error(NULL, "Symbol already bound: %s", sym.buf);
+        blok_fatal_error(NULL, "Symbol already bound: %s", sym.buf);
     }
     blok_table_set(&b->bindings, sym, value);
 }
 
 void blok_scope_rebind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
     if(blok_scope_symbol_bound(b, sym)) {
-        fatal_error(NULL, "Symbol is unbound: %s", sym.buf);
+        blok_fatal_error(NULL, "Symbol is unbound: %s", sym.buf);
     }
     blok_table_set(&b->bindings, sym, value);
 }
@@ -1208,7 +1220,7 @@ blok_Obj blok_evaluator_apply_primitive(
                 assert(argc >= 2);
                 blok_Obj cond = blok_evaluator_eval(b, argv[0]);
                 if(cond.tag != BLOK_TAG_BOOL) {
-                    fatal_error(NULL, "Expected a boolean");
+                    blok_fatal_error(NULL, "Expected a boolean");
                 } else if(cond.as.data) {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
@@ -1225,7 +1237,7 @@ blok_Obj blok_evaluator_apply_primitive(
                 assert(argc >= 2);
                 blok_Obj cond = blok_evaluator_eval(b, argv[0]);
                 if(cond.tag != BLOK_TAG_BOOL) {
-                    fatal_error(NULL, "Expected a boolean");
+                    blok_fatal_error(NULL, "Expected a boolean");
                 } else if(!cond.as.data) {
                     blok_Obj result = blok_make_nil();
                     for(int32_t i = 1; i < argc; ++i) {
@@ -1240,7 +1252,7 @@ blok_Obj blok_evaluator_apply_primitive(
             assert(argc >= 3);
             blok_Obj cond = blok_evaluator_eval(b, argv[0]);
             if(cond.tag != BLOK_TAG_BOOL) {
-                fatal_error(NULL, "Expected a boolean");
+                blok_fatal_error(NULL, "Expected a boolean");
             } else if(cond.as.data) {
                 return blok_evaluator_eval(b, argv[1]);
             } else {
@@ -1266,7 +1278,7 @@ blok_Obj blok_evaluator_apply_primitive(
                     blok_obj_print(rhs, BLOK_STYLE_CODE);
                     printf(")\n");
                     fflush(stdout);
-                    fatal_error(NULL, "expected two booleans for 'and'");
+                    blok_fatal_error(NULL, "expected two booleans for 'and'");
                 }
                 return blok_make_bool(lhs.as.data && rhs.as.data);
             }
@@ -1275,7 +1287,7 @@ blok_Obj blok_evaluator_apply_primitive(
                 assert(argc == 1);
                 blok_Obj val = blok_evaluator_eval(b, argv[0]);
                 if(val.tag != BLOK_TAG_BOOL) {
-                    fatal_error(NULL, "Cannot NOT a non-boolean");
+                    blok_fatal_error(NULL, "Cannot NOT a non-boolean");
                 }
                 return blok_make_bool(!val.as.data);
             }
@@ -1296,12 +1308,12 @@ blok_Obj blok_evaluator_apply_primitive(
             {
                 blok_Obj val = blok_evaluator_eval(b, argv[0]);
                 if(val.tag != BLOK_TAG_BOOL) {
-                    fatal_error(NULL, "Expected a boolean inside the assert");
+                    blok_fatal_error(NULL, "Expected a boolean inside the assert");
                 }
                 if(!val.as.data) {
                     printf("\n\nAssertion Failed: ");
                     blok_obj_print(argv[0], BLOK_STYLE_CODE);
-                    fatal_error(NULL, "");
+                    blok_fatal_error(NULL, "");
                 }
                 return blok_make_true();
             }
@@ -1313,7 +1325,7 @@ blok_Obj blok_evaluator_apply_primitive(
                     blok_Obj lhs = blok_evaluator_eval(b, argv[0]); \
                     blok_Obj rhs = blok_evaluator_eval(b, argv[1]); \
                     /*if(lhs.tag != BLOK_TAG_BOOL || rhs.tag != BLOK_TAG_BOOL) { \
-                        fatal_error(NULL, "Cannot use boolean operator on non-boolean values"); \
+                        blok_fatal_error(NULL, "Cannot use boolean operator on non-boolean values"); \
                     } \*/ \
                     return blok_make_bool(lhs.as.data operator rhs.as.data); \
                 }
@@ -1338,7 +1350,7 @@ blok_Obj blok_evaluator_apply_primitive(
                         blok_obj_print(rhs, BLOK_STYLE_CODE); \
                         printf(")"); \
                         fflush(stdout); \
-                        fatal_error(NULL, ""); \
+                        blok_fatal_error(NULL, ""); \
                     } \
                     return blok_make_int(lhs.as.data operator rhs.as.data); \
                 }
@@ -1359,7 +1371,7 @@ blok_Obj blok_evaluator_apply_primitive(
 
 blok_Obj blok_evaluator_apply_list(blok_Scope * b,  blok_List * list) {
     if(list->len <= 0) {
-        fatal_error(NULL, "cannot apply empty list");
+        blok_fatal_error(NULL, "cannot apply empty list");
     }
     blok_Obj fn = blok_evaluator_eval(b, list->items[0]);
     if(fn.tag == BLOK_TAG_PRIMITIVE) {
@@ -1372,7 +1384,7 @@ blok_Obj blok_evaluator_apply_list(blok_Scope * b,  blok_List * list) {
         printf(" into ");
         blok_obj_print(fn, BLOK_STYLE_CODE);
         puts("\"");
-        fatal_error(NULL, "Note, this value cannot be applied");
+        blok_fatal_error(NULL, "Note, this value cannot be applied");
     }
 
     return blok_make_nil();
@@ -1395,7 +1407,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 blok_Symbol direct = *sym;
                 blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
                 if(value.tag == BLOK_TAG_NIL) {
-                    fatal_error(NULL, "tried to evaluate null symbol: %s", sym->buf);
+                    blok_fatal_error(NULL, "tried to evaluate null symbol: %s", sym->buf);
                 }
                 return value;
             }
@@ -1409,7 +1421,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 return blok_evaluator_apply_list(b, list);
             }
         default:
-          fatal_error(NULL,
+          blok_fatal_error(NULL,
                       "Support for evaluating this type has not been "
                       "implemented yet: %s",
                       blok_tag_get_name(obj.tag));
@@ -1418,6 +1430,11 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
     }
 
     return blok_make_nil();
+}
+
+void blok_sema_analyze(blok_Obj src) {
+    (void)src;
+    
 }
 
 int main(void) {

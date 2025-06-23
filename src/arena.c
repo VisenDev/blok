@@ -66,6 +66,7 @@ void * blok_arena_realloc(blok_Arena * a, void * ptr, size_t bytes) {
         }
     }
     assert(0 && "Tried to realloc unknown ptr");
+    return NULL;
 }
 
 void blok_arena_reclaim(blok_Arena * a, void * ptr) {
