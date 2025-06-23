@@ -63,7 +63,7 @@ const char * blok_tag_get_name(blok_Tag tag) {
 
 typedef struct {
     int line;
-    char * file;
+    char const * file;
 } blok_SourceInfo;
 
 typedef struct {
@@ -858,8 +858,7 @@ void blok_print_as_bytes(blok_Obj obj) {
 /* READER */
 typedef struct {
     FILE * fp;
-    int line;
-    char const * name;
+    blok_SourceInfo src_info;
 } blok_Reader;
 
 bool blok_reader_is_whitespace(char ch) {
@@ -869,7 +868,7 @@ bool blok_reader_is_whitespace(char ch) {
 char blok_reader_getc(blok_Reader * r) {
     char ch = fgetc(r->fp);
     if(ch == '\n') {
-        ++r->line;
+        ++r->src_info.line;
     }
     return ch;
 }
@@ -910,7 +909,9 @@ blok_Obj blok_reader_parse_int(blok_Reader * r) {
     if(errno != 0) {
         fatal_error(r->fp, "Failed to parse integer, errno: %n", errno);
     }
-    return blok_make_int(num);
+    blok_Obj result = blok_make_int(num);
+    result.src_info = r->src_info;
+    return result;
 }
 
 
@@ -930,7 +931,9 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                     state = BLOK_READER_STATE_ESCAPE;
                 } else if (ch == '"') {
                     blok_reader_skip_char(r, '"');
-                    return blok_obj_from_string(str);
+                    blok_Obj result =  blok_obj_from_string(str);
+                    result.src_info = r->src_info;
+                    return result;
                 } else {
                     blok_string_append(str, blok_reader_getc(r));
                 }
@@ -981,7 +984,9 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
     }
 
     blok_reader_skip_whitespace(r);
-    return blok_make_symbol(b, sym.buf);
+    blok_Obj result =  blok_make_symbol(b, sym.buf);
+    result.src_info = r->src_info;
+    return result;
     //if(blok_reader_peek(fp) == ':') {
     //    blok_KeyValue* kv = blok_keyvalue_allocate(b);
     //    fgetc(fp); /*skip ':'*/
@@ -1011,7 +1016,9 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
         }
         blok_reader_skip_char(r, ')');
         blok_reader_skip_whitespace(r);
-        return blok_obj_from_list(result);
+        blok_Obj result_obj = blok_obj_from_list(result);
+        result_obj.src_info = r->src_info;
+        return result_obj;
     } else if(ch == '"') {
         blok_Obj result = blok_reader_parse_string(b, r);
         /*printf("Contents of result str inside parse fn: %s\n", blok_string_from_obj(result)->ptr); fflush(stdout);*/
@@ -1024,12 +1031,17 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
     return blok_make_nil();
 }
 
-blok_Obj blok_reader_read_file(blok_Arena * a, char * path) {
+blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     blok_List * result = blok_list_allocate(a, 32);
 
     blok_Reader r = {0};
     r.fp = fopen(path, "r");
-    r.name = path;
+
+    size_t len = strlen(path);
+    char * path_copy = blok_arena_alloc(a, len + 1);
+    strncpy(path_copy, path, len);
+    r.src_info.file = path_copy;
+    r.src_info.line = 1;
 
     if(r.fp == NULL) {
         fatal_error(NULL, "Failed to open file: %s\n", path);
