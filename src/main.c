@@ -896,7 +896,7 @@ void blok_reader_skip_char(blok_Reader * r, char expected) {
     }
 }
 
-int blok_reader_parse_int(blok_Reader * r) {
+blok_Obj blok_reader_parse_int(blok_Reader * r) {
     assert(isdigit(blok_reader_peek(r)));
     char buf[1024] = {0};
     size_t i = 0;
@@ -910,14 +910,14 @@ int blok_reader_parse_int(blok_Reader * r) {
     if(errno != 0) {
         fatal_error(r->fp, "Failed to parse integer, errno: %n", errno);
     }
-    return num;
+    return blok_make_int(num);
 }
 
 
 #define BLOK_READER_STATE_BASE 0
 #define BLOK_READER_STATE_ESCAPE 1
 
-blok_String * blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
+blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
     blok_reader_skip_char(r, '"');
     int state = BLOK_READER_STATE_BASE;
     blok_String * str = blok_string_allocate(b, 8);
@@ -930,7 +930,7 @@ blok_String * blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                     state = BLOK_READER_STATE_ESCAPE;
                 } else if (ch == '"') {
                     blok_reader_skip_char(r, '"');
-                    return str;
+                    return blok_obj_from_string(str);
                 } else {
                     blok_string_append(str, blok_reader_getc(r));
                 }
@@ -952,7 +952,7 @@ blok_String * blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                         blok_string_append(str, '\'');
                         break;
                     default:
-                        fatal_error(fp, "Unknown string escape: \"\\%c\"", escape);
+                        fatal_error(r->fp, "Unknown string escape: \"\\%c\"", escape);
                         break;
                 }
                 state = BLOK_READER_STATE_BASE;
@@ -965,100 +965,82 @@ bool blok_reader_is_symbol_char(char ch) {
     return ch == '_' || isalpha(ch) || isdigit(ch);
 }
 
-blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp);
+blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r);
 
-blok_Obj blok_reader_parse_symbol_or_keyvalue(blok_Arena * b, FILE * fp) {
-    assert(isalpha(blok_reader_peek(fp)));
+blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
+    assert(isalpha(blok_reader_peek(r)));
     blok_Symbol sym = {0};
     uint32_t i = 0;
-    char ch = fgetc(fp);
+    char ch = blok_reader_getc(r);
     sym.buf[i++] = ch;
-    while(blok_is_symbol_char(blok_reader_peek(fp))) {
-        sym.buf[i++] = fgetc(fp);
+    while(blok_reader_is_symbol_char(blok_reader_peek(r))) {
+        sym.buf[i++] = blok_reader_getc(r);
         if(i + 2 > sizeof(sym.buf)) {
-            fatal_error(fp, "symbol too long, %s\n", sym.buf);
+            fatal_error(r->fp, "symbol too long, %s\n", sym.buf);
         }
     }
 
-    blok_reader_skip_whitespace(fp);
-    if(blok_reader_peek(fp) == ':') {
-        blok_KeyValue* kv = blok_keyvalue_allocate(b);
-        fgetc(fp); /*skip ':'*/
-        kv->key = sym; 
-        kv->value = blok_reader_parse_obj(b, fp);
-        return blok_obj_from_keyvalue(kv);
-    } else {
-        return blok_make_symbol(b, sym.buf);
-    }
+    blok_reader_skip_whitespace(r);
+    return blok_make_symbol(b, sym.buf);
+    //if(blok_reader_peek(fp) == ':') {
+    //    blok_KeyValue* kv = blok_keyvalue_allocate(b);
+    //    fgetc(fp); /*skip ':'*/
+    //    kv->key = sym; 
+    //    kv->value = blok_reader_parse_obj(b, fp);
+    //    return blok_obj_from_keyvalue(kv);
+    //} else {
+    //    return blok_make_symbol(b, sym.buf);
+    //}
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
-blok_Obj blok_reader_parse_obj(blok_Arena * b, FILE * fp) {
-    blok_reader_skip_whitespace(fp);
-    const char ch = blok_reader_peek(fp);
+blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
+    blok_reader_skip_whitespace(r);
+    const char ch = blok_reader_peek(r);
 
     if(isdigit(ch)) {
-        return blok_reader_parse_int(fp); 
+        return blok_reader_parse_int(r); 
     } else if(ch == '(') {
-        fgetc(fp);
-        blok_reader_skip_whitespace(fp);
+        blok_reader_skip_char(r, '(');
+        blok_reader_skip_whitespace(r);
 
         blok_List * result = blok_list_allocate(b, 4);
-        while(blok_reader_peek(fp) != ')' && !feof(fp)) {
-            blok_list_append(result, blok_reader_parse_obj(b, fp));
-            blok_reader_skip_whitespace(fp);
+        while(blok_reader_peek(r) != ')' && !blok_reader_eof(r)) {
+            blok_list_append(result, blok_reader_parse_obj(b, r));
+            blok_reader_skip_whitespace(r);
         }
-        fgetc(fp);
-        blok_reader_skip_whitespace(fp);
+        blok_reader_skip_char(r, ')');
+        blok_reader_skip_whitespace(r);
         return blok_obj_from_list(result);
-        /*
-        blok_List * result = blok_list_allocate(b, 16);
-        blok_List * tmp = blok_list_allocate(b, 16);
-        int32_t sublist_count = 0;
-        fgetc(fp);
-        blok_reader_skip_whitespace(fp);
-        while(blok_reader_peek(fp) != ')' && !feof(fp)) {
-            if(blok_reader_peek(fp) == ',') {
-                fgetc(fp);
-                blok_list_append(result, blok_obj_from_list(tmp));
-                tmp = blok_list_allocate(b, 16);
-                ++sublist_count;
-            } else {
-                blok_list_append(tmp, blok_reader_parse_obj(b, fp));
-                blok_reader_skip_whitespace(fp);
-            }
-        }
-        if (blok_reader_peek(fp) != ')')
-            fatal_error(fp, "Expected close parenthesis, found %c",
-                    blok_reader_peek(fp));
-        fgetc(fp);
-        if(sublist_count == 0 ) {
-            return blok_obj_from_list(tmp);
-        } else {
-            blok_list_append(result, blok_obj_from_list(tmp));
-            return blok_obj_from_list(result);
-        }
-        */
     } else if(ch == '"') {
-        blok_Obj result = blok_reader_parse_string(b, fp);
+        blok_Obj result = blok_reader_parse_string(b, r);
         /*printf("Contents of result str inside parse fn: %s\n", blok_string_from_obj(result)->ptr); fflush(stdout);*/
         return result;
     } else if(isalpha(ch)) {
-        return blok_reader_parse_symbol_or_keyvalue(b, fp);
+        return blok_reader_parse_symbol(b, r);
     } else {
-        fatal_error(fp, "Parsing failed");
+        fatal_error(r->fp, "Parsing failed");
     }
     return blok_make_nil();
 }
 
-blok_Obj blok_reader_read_file(blok_Arena * a, FILE * fp) {
+blok_Obj blok_reader_read_file(blok_Arena * a, char * path) {
     blok_List * result = blok_list_allocate(a, 32);
-    blok_list_append(result, blok_make_symbol(a, "progn"));
-    blok_reader_skip_whitespace(fp);
-    while(!feof(fp) && blok_reader_peek(fp) != ')') {
-        blok_list_append(result, blok_reader_parse_obj(a, fp));
-        blok_reader_skip_whitespace(fp);
+
+    blok_Reader r = {0};
+    r.fp = fopen(path, "r");
+    r.name = path;
+
+    if(r.fp == NULL) {
+        fatal_error(NULL, "Failed to open file: %s\n", path);
     }
+    blok_list_append(result, blok_make_symbol(a, "progn"));
+    blok_reader_skip_whitespace(&r);
+    while(!blok_reader_eof(&r) && blok_reader_peek(&r) != ')') {
+        blok_list_append(result, blok_reader_parse_obj(a, &r));
+        blok_reader_skip_whitespace(&r);
+    }
+    fclose(r.fp);
     return blok_obj_from_list(result);
 }
 
@@ -1434,14 +1416,12 @@ int main(void) {
     b.bindings = blok_table_init_capacity(&b.arena, 32);
     blok_scope_bind_builtins(&b);
 
-    FILE * fp = fopen("test.lisp", "r");
-    blok_Obj source = blok_reader_read_file(&b.arena, fp);
+    blok_Obj source = blok_reader_read_file(&b.arena, "test.lisp");
     //blok_obj_print(source, BLOK_STYLE_CODE);
     //fflush(stdout);
 
     blok_evaluator_eval(&b, source);
     blok_arena_free(&b.arena);
 
-    fclose(fp);
     return 0;
 }
