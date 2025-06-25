@@ -1,6 +1,6 @@
 " Vim syntax file
-" Language: Custom S-Expression Language
-" Maintainer: Your Name
+" Language: blok
+" Maintainer: Robert Burnett
 
 if exists("b:current_syntax")
   finish
