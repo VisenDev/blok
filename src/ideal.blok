@@ -1,0 +1,11 @@
+(fn int triple (int num)
+    (add num num num)
+    )
+
+(procedure main ()
+    (print (triple 5))
+    0
+    )
+
+(hello world)
+(foo var)
