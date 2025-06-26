@@ -1,11 +1,19 @@
-(fn int triple (int num)
+(fn triple:int (num:int)
+    (for (int i 0; lte i 10; incr i)
+        (print i)
+    )
     (add num num num)
-    )
+)
 
-(procedure main ()
+(fn print_int_array:void (nums:int[])
+    (print "  ")
+)
+
+(procedure main:int ()
     (print (triple 5))
+    (print "hel(l);0")
     0
-    )
+)
 
 (hello world)
 (foo var)

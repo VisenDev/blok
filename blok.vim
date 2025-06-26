@@ -14,13 +14,25 @@ highlight link customComment Comment
 syntax region customString start='"' end='"' skip='\\"'
 highlight link customString String
 
+" Integers
+syntax match customInteger /\v[0-9]+/ containedin=ALLBUT,customComment,customString
+highlight link customInteger Number
+
+" match an s-expr head without including the '(' or spaces
+syntax match customHeadSymbol '\((\s*\)\@<=\(\k\|[-+*/!?<>]\)\(\k\|[-+*/!?<>]\)*' containedin=ALLBUT,customComment,customString
+highlight link customHeadSymbol Keyword
+
+" highlight the first symbol after a semicolon (ignoring any spaces)
+syntax match customAfterSemicolon /\%(;\s*\)\@<=\(\k\|[-+*/!?<>]\)\(\k\|[-+*/!?<>]\)*/ containedin=ALLBUT,customComment,customString
+highlight link customAfterSemicolon Keyword
+
 " Parentheses
 syntax match customParen /[()]/
 highlight link customParen Delimiter
 
-" First symbol in an s-expression: (foo ...)
-syntax match customHeadSymbol "(\s*\(\k\|[-+*/!?<>]\)\(\k\|[-+*/!?<>]\)*" containedin=ALLBUT,customComment
-highlight link customHeadSymbol Identifier
+" highlight standalone semicolons as delimiters
+syntax match customDelimiter /;/ containedin=ALLBUT,customComment,customString
+highlight link customDelimiter Delimiter
 
 " Keywords (optional)
 syntax keyword customKeyword define lambda if else let
