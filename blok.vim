@@ -7,40 +7,43 @@ if exists("b:current_syntax")
 endif
 
 " Comments
-syntax match customComment "//.*$"
-highlight link customComment Comment
+syntax match blokComment "//.*$"
+highlight link blokComment Comment
 
 " Strings
-syntax region customString start='"' end='"' skip='\\"'
-highlight link customString String
+syntax region blokString start='"' end='"' skip='\\"'
+highlight link blokString String
 
 " Integers
-syntax match customInteger /\v[0-9]+/ containedin=ALLBUT,customComment,customString
-highlight link customInteger Number
+syntax match blokInteger /\v[0-9]+/ containedin=ALLBUT,blokComment,blokString
+highlight link blokInteger Number
 
-" match an s-expr head without including the '(' or spaces
-syntax match customHeadSymbol '\((\s*\)\@<=\(\k\|[-+*/!?<>]\)\(\k\|[-+*/!?<>]\)*' containedin=ALLBUT,customComment,customString
-highlight link customHeadSymbol Keyword
 
-" highlight the first symbol after a semicolon (ignoring any spaces)
-syntax match customAfterSemicolon /\%(;\s*\)\@<=\(\k\|[-+*/!?<>]\)\(\k\|[-+*/!?<>]\)*/ containedin=ALLBUT,customComment,customString
-highlight link customAfterSemicolon Keyword
+" Keyvalue delimiter
+syntax match blokColon /:/ 
+highlight link blokColon Delimiter
+
+" First element in sexpr
+syntax match blokSexprHeader '\((\s*\)\@<=\(\k\)\(\k\)*' 
+"syntax match blokSexprHeader /\%(\()\@<=\<[a-z][a-z0-9_]*\>/
+"syntax match blokSexprHeader /(\s*\zs\<[a-z][a-z0-9_]*\>/
+highlight link blokSexprHeader Keyword
 
 " Parentheses
-syntax match customParen /[()]/
-highlight link customParen Delimiter
+syntax match blokParen /[()]/ containedin=ALLBUT,blokSexprHeader
+highlight link blokParen Delimiter 
 
-" highlight standalone semicolons as delimiters
-syntax match customDelimiter /;/ containedin=ALLBUT,customComment,customString
-highlight link customDelimiter Delimiter
+" Types
+syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>/
+highlight link blokType Identifier
 
-" Keywords (optional)
-syntax keyword customKeyword define lambda if else let
-highlight link customKeyword Keyword
 
-let b:current_syntax = "sexpr_language"
+let b:current_syntax = "blok"
 
-" Indentation settings
+
+
+
+""""""" Indentation settings """""""
 if exists("b:did_indent")
   finish
 endif

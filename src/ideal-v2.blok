@@ -1,0 +1,12 @@
+(fn Int factorial (Int num)
+    (let i 10)
+    (if (num:<= 1)
+        then 1
+        else (factorial (num:- 1))
+        )
+    )
+
+(procedure Int main (Int argc Char[][] argv)
+    (print_int (factorial 10))
+    0
+    )
