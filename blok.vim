@@ -24,18 +24,18 @@ syntax match blokColon /:/
 highlight link blokColon Delimiter
 
 " First element in sexpr
-syntax match blokSexprHeader '\((\s*\)\@<=\(\k\)\(\k\)*' 
-"syntax match blokSexprHeader /\%(\()\@<=\<[a-z][a-z0-9_]*\>/
-"syntax match blokSexprHeader /(\s*\zs\<[a-z][a-z0-9_]*\>/
-highlight link blokSexprHeader Keyword
+"syntax match blokSexprHeader '\((\s*\)\@<=\(\k\)\(\k\)*' 
+"highlight link blokSexprHeader Keyword
 
 " Parentheses
 syntax match blokParen /[()]/ containedin=ALLBUT,blokSexprHeader
 highlight link blokParen Delimiter 
 
 " Types
-syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>/
+syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>[\[\]]*/
 highlight link blokType Identifier
+
+
 
 
 let b:current_syntax = "blok"
