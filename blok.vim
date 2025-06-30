@@ -21,7 +21,7 @@ highlight link blokInteger Number
 
 " Keyvalue delimiter
 syntax match blokColon /:/ 
-highlight link blokColon Delimiter
+highlight link blokColon Keyword
 
 " First element in sexpr
 "syntax match blokSexprHeader '\((\s*\)\@<=\(\k\)\(\k\)*' 

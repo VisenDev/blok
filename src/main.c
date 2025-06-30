@@ -25,15 +25,17 @@ void blok_abort(void) {
 
 typedef struct {
     int line;
-    char const * file;
+    int column;
+    char file[128];
 } blok_SourceInfo;
 
 void blok_print_sourceinfo(FILE * fp, blok_SourceInfo src_info) {
-    fprintf(fp, "%s:%d", src_info.file, src_info.line); 
+    fprintf(fp, "%s:%d:%d\n", src_info.file, src_info.line, src_info.column); 
 }
 
 BLOK_NORETURN 
 void blok_fatal_error(blok_SourceInfo * src_info, const char * restrict fmt, ...) {
+    fprintf(stderr, "ERROR: \n");
     if(src_info != NULL) {
         blok_print_sourceinfo(stderr, *src_info);
     }
@@ -707,19 +709,42 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
         case BLOK_TAG_INT:
             return obj;
         case BLOK_TAG_LIST:
-            return blok_obj_from_list(blok_list_copy(destination_scope, blok_list_from_obj(obj)));
+            {
+                blok_Obj result = blok_obj_from_list(blok_list_copy(destination_scope, blok_list_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
         case BLOK_TAG_STRING:
-            return blok_obj_from_string(blok_string_copy(destination_scope, blok_string_from_obj(obj)));
+            {
+                blok_Obj result = blok_obj_from_string(blok_string_copy(destination_scope, blok_string_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
         case BLOK_TAG_SYMBOL:
-            return blok_obj_from_symbol(blok_symbol_copy(destination_scope, blok_symbol_from_obj(obj)));
+            {
+                blok_Obj result = blok_obj_from_symbol(blok_symbol_copy(destination_scope, blok_symbol_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
         case BLOK_TAG_KEYVALUE:
-            return blok_obj_from_keyvalue(blok_keyvalue_copy(destination_scope, blok_keyvalue_from_obj(obj)));
+            {
+                blok_Obj result =  blok_obj_from_keyvalue(blok_keyvalue_copy(destination_scope, blok_keyvalue_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
         case BLOK_TAG_TABLE:
-            return blok_obj_from_table(blok_table_copy(destination_scope, blok_table_from_obj(obj)));
+            {
+                blok_Obj result =  blok_obj_from_table(blok_table_copy(destination_scope, blok_table_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
         case BLOK_TAG_FUNCTION:
-            return blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
+            {
+                blok_Obj result =blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
+                result.src_info = obj.src_info;
+                return result;
+            }
     }
-    return blok_make_nil();
 }
 
 /*
@@ -881,6 +906,9 @@ char blok_reader_getc(blok_Reader * r) {
     char ch = fgetc(r->fp);
     if(ch == '\n') {
         ++r->src_info.line;
+        r->src_info.column = 0;
+    } else {
+        ++r->src_info.column;
     }
     return ch;
 }
@@ -977,7 +1005,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
 }
 
 bool blok_reader_is_symbol_char(char ch) {
-    return ch == '_' || isalpha(ch) || isdigit(ch);
+    return ch == '_' || ch == '[' || ch == ']' || isalpha(ch) || isdigit(ch);
 }
 
 blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r);
@@ -995,19 +1023,19 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
         }
     }
 
-    blok_reader_skip_whitespace(r);
-    blok_Obj result =  blok_make_symbol(b, sym.buf);
-    result.src_info = r->src_info;
-    return result;
-    //if(blok_reader_peek(fp) == ':') {
-    //    blok_KeyValue* kv = blok_keyvalue_allocate(b);
-    //    fgetc(fp); /*skip ':'*/
-    //    kv->key = sym; 
-    //    kv->value = blok_reader_parse_obj(b, fp);
-    //    return blok_obj_from_keyvalue(kv);
-    //} else {
-    //    return blok_make_symbol(b, sym.buf);
-    //}
+    if(blok_reader_peek(r) == ':') {
+        blok_KeyValue* kv = blok_keyvalue_allocate(b);
+        blok_reader_skip_char(r, ':');
+        kv->key = sym; 
+        kv->value = blok_reader_parse_obj(b, r);
+        blok_Obj result = blok_obj_from_keyvalue(kv);
+        result.src_info = r->src_info;
+        return result;
+    } else {
+        blok_Obj result =  blok_make_symbol(b, sym.buf);
+        result.src_info = r->src_info;
+        return result;
+    }
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
@@ -1033,12 +1061,12 @@ blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
         return result_obj;
     } else if(ch == '"') {
         blok_Obj result = blok_reader_parse_string(b, r);
-        /*printf("Contents of result str inside parse fn: %s\n", blok_string_from_obj(result)->ptr); fflush(stdout);*/
         return result;
     } else if(isalpha(ch)) {
-        return blok_reader_parse_symbol(b, r);
+        blok_Obj result = blok_reader_parse_symbol(b, r);
+        return result;
     } else {
-        blok_fatal_error(&r->src_info, "Parsing failed");
+        blok_fatal_error(&r->src_info, "Encountered unexpected character '%c' when parsing object", ch);
     }
     return blok_make_nil();
 }
@@ -1049,10 +1077,10 @@ blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     blok_Reader r = {0};
     r.fp = fopen(path, "r");
 
-    size_t len = strlen(path);
-    char * path_copy = blok_arena_alloc(a, len + 1);
-    strncpy(path_copy, path, len);
-    r.src_info.file = path_copy;
+    //size_t len = strlen(path);
+    //char * path_copy = blok_arena_alloc(a, len + 1);
+    //strncpy(path_copy, path, len);
+    strncpy(r.src_info.file, path, sizeof(r.src_info.file));
     r.src_info.line = 1;
 
     if(r.fp == NULL) {
@@ -1407,7 +1435,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 blok_Symbol direct = *sym;
                 blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
                 if(value.tag == BLOK_TAG_NIL) {
-                    blok_fatal_error(NULL, "tried to evaluate null symbol: %s", sym->buf);
+                    blok_fatal_error(&obj.src_info, "Tried to evaluate undefined symbol '%s'", sym->buf);
                 }
                 return value;
             }
@@ -1445,7 +1473,7 @@ int main(void) {
     b.bindings = blok_table_init_capacity(&b.arena, 32);
     blok_scope_bind_builtins(&b);
 
-    blok_Obj source = blok_reader_read_file(&b.arena, "test.lisp");
+    blok_Obj source = blok_reader_read_file(&b.arena, "ideal.blok");
     //blok_obj_print(source, BLOK_STYLE_CODE);
     //fflush(stdout);
 

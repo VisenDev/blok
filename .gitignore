@@ -2,6 +2,7 @@
 zig-out
 src/c23
 main
+main_release
 
 # Prerequisites
 *.d

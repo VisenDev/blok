@@ -1,19 +1,12 @@
-(fn triple:int (num:int)
-    (for (int i 0; lte i 10; incr i)
-        (print i)
+(fn Int factorial (Int num)
+    (let i 10)
+    (if (num:lte 1)
+        then 1
+        else (factorial (num:sub 1))
+        )
     )
-    (add num num num)
-)
 
-(fn print_int_array:void (nums:int[])
-    (print "  ")
-)
-
-(procedure main:int ()
-    (print (triple 5))
-    (print "hel(l);0")
+(procedure Int main (Int argc Char[][] argv)
+    (print_int (factorial 10))
     0
-)
-
-(hello world)
-(foo var)
+    )
