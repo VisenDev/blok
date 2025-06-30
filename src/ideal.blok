@@ -6,7 +6,12 @@
         )
     )
 
-(procedure Int main (Int argc Char[][] argv)
+(procedure Void test_for ()
+    (for (Int i 0, i:lessthan 10, incr i)
+        )
+)
+
+(procedure Int main (Int reference argc, Char[][] argv)
     (print_int (factorial 10))
     0
     )

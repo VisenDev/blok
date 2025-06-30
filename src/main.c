@@ -1038,37 +1038,63 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
     }
 }
 
+blok_Obj blok_reader_parse_list(blok_Arena * a, blok_Reader * r) {
+        blok_reader_skip_char(r, '(');
+        blok_reader_skip_whitespace(r);
+
+#       define BLOK_LIST_MAX_SUBLISTS 32
+        int sublist_count = 0;
+        blok_List * sublists[BLOK_LIST_MAX_SUBLISTS];
+
+        do {
+            if(blok_reader_peek(r) == ',') {
+                blok_reader_skip_char(r, ',');
+            }
+            if(sublist_count > BLOK_LIST_MAX_SUBLISTS) {
+                blok_fatal_error(&r->src_info, "List contains too many sublists, the maximum amount of sublists is %d", BLOK_LIST_MAX_SUBLISTS);
+            }
+            sublists[sublist_count++] = blok_list_allocate(a, 4);
+
+            while(blok_reader_peek(r) != ')' && blok_reader_peek(r) != ',' && !blok_reader_eof(r)) {
+                blok_list_append(sublists[sublist_count - 1], blok_reader_parse_obj(a, r));
+                blok_reader_skip_whitespace(r);
+            }
+
+        } while(blok_reader_peek(r) == ',');
+        blok_reader_skip_char(r, ')');
+        blok_reader_skip_whitespace(r);
+        blok_List * result = NULL;
+        if(sublist_count <= 1) {
+            result = sublists[0];
+        } else {
+            result = blok_list_allocate(a, sublist_count);
+            for(int i = 0; i < sublist_count; ++i) {
+                blok_list_append(result, blok_obj_from_list(sublists[i]));
+            }
+        }
+
+        blok_Obj result_obj = blok_obj_from_list(result);
+        result_obj.src_info = r->src_info;
+        return result_obj;
+}
+
 //blok_Obj blok_reader_read_obj(FILE *);
-blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r) {
+blok_Obj blok_reader_parse_obj(blok_Arena * a, blok_Reader * r) {
     blok_reader_skip_whitespace(r);
     const char ch = blok_reader_peek(r);
 
     if(isdigit(ch)) {
         return blok_reader_parse_int(r); 
     } else if(ch == '(') {
-        blok_reader_skip_char(r, '(');
-        blok_reader_skip_whitespace(r);
-
-        blok_List * result = blok_list_allocate(b, 4);
-        while(blok_reader_peek(r) != ')' && !blok_reader_eof(r)) {
-            blok_list_append(result, blok_reader_parse_obj(b, r));
-            blok_reader_skip_whitespace(r);
-        }
-        blok_reader_skip_char(r, ')');
-        blok_reader_skip_whitespace(r);
-        blok_Obj result_obj = blok_obj_from_list(result);
-        result_obj.src_info = r->src_info;
-        return result_obj;
+        return blok_reader_parse_list(a, r);
     } else if(ch == '"') {
-        blok_Obj result = blok_reader_parse_string(b, r);
-        return result;
+        return blok_reader_parse_string(a, r);
     } else if(isalpha(ch)) {
-        blok_Obj result = blok_reader_parse_symbol(b, r);
-        return result;
+        return blok_reader_parse_symbol(a, r);
     } else {
         blok_fatal_error(&r->src_info, "Encountered unexpected character '%c' when parsing object", ch);
     }
-    return blok_make_nil();
+    /*return blok_make_nil();*/
 }
 
 blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {

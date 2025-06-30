@@ -3,8 +3,8 @@ MAX_ERRORS_GCC= --max-errors=${ERRORS}
 MAX_ERRORS_CLANG= -ferror-limit=${ERRORS}
 SRC= main.c
 STD= c99
-DEBUG_FLAGS= -O0 -fsanitize=address,undefined
-RELEASE_FLAGS= -O3 -g -DNDEBUG -ffast-math
+DEBUG_FLAGS= -O0 -fsanitize=address,undefined -glldb
+RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math
 WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror
 
 
