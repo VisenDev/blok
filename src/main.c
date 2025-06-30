@@ -33,12 +33,17 @@ void blok_print_sourceinfo(FILE * fp, blok_SourceInfo src_info) {
     fprintf(fp, "%s:%d:%d\n", src_info.file, src_info.line, src_info.column); 
 }
 
-BLOK_NORETURN 
-void blok_fatal_error(blok_SourceInfo * src_info, const char * restrict fmt, ...) {
-    fprintf(stderr, "ERROR: \n");
-    if(src_info != NULL) {
+
+BLOK_NORETURN
+void blok_fatal_error_internal(
+        blok_SourceInfo *src_info, const char *c_file,
+        int c_line, const char *restrict fmt, ...) {
+    fprintf(stderr, "ERROR: \n    ");
+    if (src_info != NULL) {
         blok_print_sourceinfo(stderr, *src_info);
     }
+    fprintf(stderr, "    Note, Error emitted from\n");
+    fprintf(stderr, "        %s:%d:0:\n    ", c_file, c_line);
     va_list args;
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);
@@ -47,6 +52,11 @@ void blok_fatal_error(blok_SourceInfo * src_info, const char * restrict fmt, ...
     fflush(stderr);
     blok_abort();
 }
+
+/*note, fmt is passed as part of __VA_ARGS__ to avoid the extra comma problem*/
+#define blok_fatal_error(src_info, /*fmt,*/ ...) \
+    blok_fatal_error_internal(src_info, __FILE__, __LINE__, __VA_ARGS__ )
+
 
 typedef enum {
     BLOK_TAG_NIL = 0,
