@@ -24,7 +24,6 @@ void blok_abort(void) {
     abort();
 }
 
-
 typedef struct {
     int line;
     int column;
@@ -71,7 +70,35 @@ typedef enum {
     BLOK_TAG_TABLE,
     BLOK_TAG_FUNCTION,
     BLOK_TAG_BOOL,
+    BLOK_TAG_TYPE,
 } blok_Tag;
+
+
+struct blok_Type;
+
+typedef enum {
+    BLOK_TYPETAG_OBJ,
+    BLOK_TYPETAG_INT,
+    BLOK_TYPETAG_LIST,
+    BLOK_TYPETAG_STRING,
+} blok_TypeTag;
+
+typedef struct {
+    int64_t min;
+    int64_t max;
+} blok_TypeInt;
+
+typedef struct {
+    struct blok_Type * child; 
+} blok_TypeList;
+
+typedef struct blok_Type {
+    blok_TypeTag tag; 
+    union {
+        blok_TypeInt integer; 
+        blok_TypeList list;
+    } as;
+} blok_Type;
 
 
 const char * blok_tag_get_name(blok_Tag tag) {
@@ -86,7 +113,8 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_SYMBOL:    return "BLOK_TAG_SYMBOL";
         case BLOK_TAG_TABLE:     return "BLOK_TAG_TABLE";
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
-        case BLOK_TAG_BOOL:     return "BLOK_TAG_BOOL";
+        case BLOK_TAG_BOOL:      return "BLOK_TAG_BOOL";
+        case BLOK_TAG_TYPE:      return "BLOK_TAG_TYPE";
     }
 }
 
@@ -135,7 +163,16 @@ typedef struct {
     blok_Arena * arena; /*the scope in which new items are allocated*/
 } blok_Table;
 
+
+#define BLOK_PARAMETER_COUNT_MAX 8
 typedef struct {
+    blok_Type return_type;
+    blok_Type params[BLOK_PARAMETER_COUNT_MAX];
+    int32_t param_count;
+} blok_FunctionSignature;
+
+typedef struct {
+    blok_FunctionSignature signature;
     blok_List * params;
     blok_List * body;
 } blok_Function;
@@ -153,41 +190,6 @@ void blok_scope_close(blok_Scope * b) {
     blok_arena_free(&b->arena);
 }
 
-
-#define BLOK_PARAMETER_COUNT_MAX 8
-typedef struct {
-    bool variadic; 
-    blok_Tag return_type;
-    blok_Tag params[BLOK_PARAMETER_COUNT_MAX];
-    int32_t param_count;
-} blok_FunctionSignature;
-
-/* TODO, make the contents of a file and a progn different primitives*/
-typedef enum {
-    BLOK_PRIMITIVE_PRINT,
-    BLOK_PRIMITIVE_PROGN,
-    BLOK_PRIMITIVE_SET,
-    BLOK_PRIMITIVE_DEFUN,
-    BLOK_PRIMITIVE_QUOTE,
-    BLOK_PRIMITIVE_LIST,
-    BLOK_PRIMITIVE_WHEN,
-    BLOK_PRIMITIVE_NOT,
-    BLOK_PRIMITIVE_EQUAL,
-    BLOK_PRIMITIVE_AND,
-    BLOK_PRIMITIVE_LT,
-    BLOK_PRIMITIVE_LTE,
-    BLOK_PRIMITIVE_GT,
-    BLOK_PRIMITIVE_GTE,
-    BLOK_PRIMITIVE_ADD,
-    BLOK_PRIMITIVE_SUB,
-    BLOK_PRIMITIVE_MUL,
-    BLOK_PRIMITIVE_DIV,
-    BLOK_PRIMITIVE_MOD,
-    BLOK_PRIMITIVE_IF,
-    BLOK_PRIMITIVE_UNLESS,
-    BLOK_PRIMITIVE_ASSERT,
-    BLOK_PRIMITIVE_WHILE,
-} blok_Primitive;
 
 
 blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
@@ -234,9 +236,6 @@ blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f,
 
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .as.data = data};
-}
-blok_Obj blok_make_primitive(blok_Primitive data) {
-    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
 }
 blok_Obj blok_make_nil(void) {
     return (blok_Obj){.tag = BLOK_TAG_NIL};
@@ -756,6 +755,9 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
                 result.src_info = obj.src_info;
                 return result;
             }
+        case BLOK_TAG_TYPE:
+            blok_fatal_error(NULL, "TODO");
+            return blok_make_nil();
     }
 }
 

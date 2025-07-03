@@ -4,6 +4,38 @@
 #include "blok_arena.c"
 #include "blok_obj.c"
 
+/* TODO, make the contents of a file and a progn different primitives*/
+typedef enum blok_Primitive {
+    BLOK_PRIMITIVE_PRINT,
+    BLOK_PRIMITIVE_PROGN,
+    BLOK_PRIMITIVE_SET,
+    BLOK_PRIMITIVE_DEFUN,
+    BLOK_PRIMITIVE_QUOTE,
+    BLOK_PRIMITIVE_LIST,
+    BLOK_PRIMITIVE_WHEN,
+    BLOK_PRIMITIVE_NOT,
+    BLOK_PRIMITIVE_EQUAL,
+    BLOK_PRIMITIVE_AND,
+    BLOK_PRIMITIVE_LT,
+    BLOK_PRIMITIVE_LTE,
+    BLOK_PRIMITIVE_GT,
+    BLOK_PRIMITIVE_GTE,
+    BLOK_PRIMITIVE_ADD,
+    BLOK_PRIMITIVE_SUB,
+    BLOK_PRIMITIVE_MUL,
+    BLOK_PRIMITIVE_DIV,
+    BLOK_PRIMITIVE_MOD,
+    BLOK_PRIMITIVE_IF,
+    BLOK_PRIMITIVE_UNLESS,
+    BLOK_PRIMITIVE_ASSERT,
+    BLOK_PRIMITIVE_WHILE,
+} blok_Primitive;
+
+
+blok_Obj blok_make_primitive(blok_Primitive data) {
+    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
+}
+
 blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_Symbol sym) {
     blok_Obj result = blok_table_get(destination_arena, &b->bindings, sym);
     if(result.tag == BLOK_TAG_NIL && b->parent != NULL) {
