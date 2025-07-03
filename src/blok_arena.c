@@ -1,3 +1,6 @@
+#ifndef ARENA_C
+#define ARENA_C
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
@@ -113,3 +116,5 @@ void blok_arena_run_tests(void) {
     memset(mem5, 2, 1000);
     blok_arena_free(&a);
 }
+
+#endif /*ARENA_C*/
