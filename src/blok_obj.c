@@ -71,22 +71,18 @@ typedef enum {
     BLOK_TAG_FUNCTION,
     BLOK_TAG_BOOL,
     BLOK_TAG_TYPE,
+    BLOK_TAG_BINDING,
 } blok_Tag;
 
 
 struct blok_Type;
 
 typedef enum {
-    BLOK_TYPETAG_OBJ,
+    BLOK_TYPETAG_ANY,
     BLOK_TYPETAG_INT,
     BLOK_TYPETAG_LIST,
     BLOK_TYPETAG_STRING,
 } blok_TypeTag;
-
-typedef struct {
-    int64_t min;
-    int64_t max;
-} blok_TypeInt;
 
 typedef struct {
     struct blok_Type * child; 
@@ -95,8 +91,7 @@ typedef struct {
 typedef struct blok_Type {
     blok_TypeTag tag; 
     union {
-        blok_TypeInt integer; 
-        blok_TypeList list;
+        const struct blok_Type * child;
     } as;
 } blok_Type;
 
@@ -165,25 +160,44 @@ typedef struct {
 
 
 #define BLOK_PARAMETER_COUNT_MAX 8
-typedef struct {
+typedef struct blok_FunctionSignature {
     blok_Type return_type;
     blok_Type params[BLOK_PARAMETER_COUNT_MAX];
     int32_t param_count;
 } blok_FunctionSignature;
 
 typedef struct {
+    blok_Arena * arena;
     blok_FunctionSignature signature;
-    blok_List * params;
-    blok_List * body;
+    blok_List params;
+    blok_List body;
 } blok_Function;
 
+typedef struct {
+    blok_Arena * arena;
+    blok_Type type;
+    blok_Obj value;
+} blok_StorageCell;
 
-typedef struct blok_Scope {
-    struct blok_Scope * parent;
+typedef struct blok_ToplevelScope {
+    blok_Arena arena;
+    blok_Table builtin_bindings;
+    blok_Table interpreted_bindings;
+    blok_Table compiled_bindings;
+
+    /*DEBUG INFO*/
+    const char * filename;
+} blok_ToplevelScope;
+
+typedef struct blok_LocalScope {
+    struct blok_LocalScope * parent;
+    blok_ToplevelScope * context;
     blok_Arena arena;
     blok_Table bindings;
-    /*blok_Table * const builtins;*/
-} blok_Scope;
+} blok_LocalScope;
+
+
+
 
 
 void blok_scope_close(blok_Scope * b) {
