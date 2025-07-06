@@ -821,93 +821,99 @@ typedef enum {
     BLOK_STYLE_CODE
 } blok_Style;
 
-void blok_obj_print(blok_Obj obj, blok_Style style);
+void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style);
 
-void blok_keyvalue_print(blok_KeyValue * const kv, blok_Style style) {
-    printf("%s:", kv->key.buf);
-    blok_obj_print(kv->value, style);
+void blok_keyvalue_fprint(FILE * fp, blok_KeyValue * const kv, blok_Style style) {
+    fprintf(fp, "%s:", kv->key.buf);
+    blok_obj_fprint(fp, kv->value, style);
 }
 
-void blok_table_print(blok_Table * const table, blok_Style style) {
+void blok_table_fprint(FILE * fp, blok_Table * const table, blok_Style style) {
     blok_table_iterate_start(table);
     blok_KeyValue * kv = NULL;
     bool first = true;
-    printf("[");
+    fprintf(fp, "[");
     while((kv = blok_table_iterate_next(table)) != NULL) {
-        if(!first) printf(" ");
+        if(!first) fprintf(fp, " ");
         first = false;
-        printf("%s:", kv->key.buf);
-        blok_obj_print(kv->value, style);
+        fprintf(fp, "%s:", kv->key.buf);
+        blok_obj_fprint(fp, kv->value, style);
     }
-    printf("]");
+    fprintf(fp, "]");
 }
 
-void blok_print_escape_sequences(const char * str, size_t max) {
+void blok_fprint_escape_sequences(FILE * fp, const char * str, size_t max) {
     for(size_t i = 0; i < max && *str != 0; ++str, ++i) {
         switch(*str) {
             case '\t':
-                printf("\\t");
+                fprintf(fp, "\\t");
                 break;
             case '\n':
-                printf("\\n");
+                fprintf(fp, "\\n");
                 break;
             case '\\':
-                printf("\\\\");
+                fprintf(fp, "\\\\");
                 break;
             default:
-                printf("%c", *str);
+                fprintf(fp, "%c", *str);
                 break;
         }
     }
 }
 
-void blok_obj_print(blok_Obj obj, blok_Style style) {
+void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style) {
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
-            printf("nil");
+            fprintf(fp, "nil");
             break;
         case BLOK_TAG_INT:
-            printf("%d", obj.as.data);
+            fprintf(fp, "%d", obj.as.data);
             break;
         case BLOK_TAG_PRIMITIVE:
-            printf("<Primitive %d>", obj.as.data);
+            fprintf(fp, "<Primitive %d>", obj.as.data);
             break;
         case BLOK_TAG_LIST:
             {
                 blok_List * list = blok_list_from_obj(obj);
-                printf("(");
+                fprintf(fp, "(");
                 for(int i = 0; i < list->len; ++i) {
-                    if(i != 0) printf(" ");
-                    blok_obj_print(list->items[i], style);
+                    if(i != 0) fprintf(fp, " ");
+                    blok_obj_fprint(fp, list->items[i], style);
                 }
-                printf(")");
+                fprintf(fp, ")");
             }
             break;
         case BLOK_TAG_STRING:
             switch(style) {
                 case BLOK_STYLE_AESTHETIC:
-                printf("%s", blok_string_from_obj(obj)->ptr);
+                fprintf(fp, "%s", blok_string_from_obj(obj)->ptr);
                 break;
                 case BLOK_STYLE_CODE:
-                printf("\"");
+                fprintf(fp, "\"");
                 blok_String * str = blok_string_from_obj(obj);
-                blok_print_escape_sequences(str->ptr, 32);
-                printf("\"");
+                blok_fprint_escape_sequences(fp, str->ptr, 32);
+                fprintf(fp, "\"");
                 break;
             }
             break;
         case BLOK_TAG_SYMBOL:
-            printf("%s", blok_symbol_from_obj(obj)->buf);
+            fprintf(fp, "%s", blok_symbol_from_obj(obj)->buf);
             break;
         case BLOK_TAG_KEYVALUE:
-            blok_keyvalue_print(blok_keyvalue_from_obj(obj), style);
+            blok_keyvalue_fprint(fp, blok_keyvalue_from_obj(obj), style);
             break;
         case BLOK_TAG_TABLE:
-            blok_table_print(blok_table_from_obj(obj), style);
+            blok_table_fprint(fp, blok_table_from_obj(obj), style);
+            break;
         default:
-            printf("<Unprintable %s>", blok_tag_get_name(obj.tag));
+            fprintf(fp, "<Unprintable %s>", blok_tag_get_name(obj.tag));
             break;
     }
+}
+
+
+void blok_obj_print(blok_Obj obj, blok_Style style) {
+    blok_obj_fprint(stdout, obj, style);
 }
 
 

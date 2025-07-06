@@ -379,4 +379,49 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
 
     return blok_make_nil();
 }
+
+
+void blok_compiler_compile_list(blok_Scope * b, blok_List * l, FILE * output) {
+
+
+}
+
+void blok_compiler_compile(blok_Scope * b, blok_Obj obj, FILE * output) {
+    switch(obj.tag) {
+        case BLOK_TAG_NIL:
+        case BLOK_TAG_INT:
+        case BLOK_TAG_STRING:
+            blok_obj_fprint(output, obj, BLOK_STYLE_CODE);
+        case BLOK_TAG_SYMBOL:
+            {
+                blok_Arena tmp = {0};
+                assert(blok_scope_lookup(&tmp, b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
+                blok_arena_free(&tmp);
+                blok_Symbol * sym = blok_symbol_from_obj(obj);
+                blok_Symbol direct = *sym;
+                blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
+                if(value.tag == BLOK_TAG_NIL) {
+                    blok_fatal_error(&obj.src_info, "Tried to evaluate undefined symbol '%s'", sym->buf);
+                }
+                /*return value;*/
+            }
+        case BLOK_TAG_LIST:
+            {
+                /*printf("-->Evaluating ");
+                blok_obj_print(obj, BLOK_STYLE_CODE);
+                printf("\n");*/
+                fflush(stdout);
+                blok_List * list = blok_list_from_obj(obj);
+                blok_compiler_compile_list(b, list);
+            }
+        default:
+          blok_fatal_error(NULL,
+                      "Support for evaluating this type has not been "
+                      "implemented yet: %s",
+                      blok_tag_get_name(obj.tag));
+          break;
+
+}
+
+
 #endif /*BLOK_EVALUATOR_C*/
