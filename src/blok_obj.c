@@ -110,6 +110,7 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
         case BLOK_TAG_BOOL:      return "BLOK_TAG_BOOL";
         case BLOK_TAG_TYPE:      return "BLOK_TAG_TYPE";
+        case BLOK_TAG_BINDING:   return "BLOK_TAG_BINDING";
     }
 }
 
@@ -169,15 +170,14 @@ typedef struct blok_FunctionSignature {
 typedef struct {
     blok_Arena * arena;
     blok_FunctionSignature signature;
-    blok_List params;
-    blok_List body;
+    blok_List * params;
+    blok_List * body;
 } blok_Function;
 
 typedef struct {
-    blok_Arena * arena;
     blok_Type type;
     blok_Obj value;
-} blok_StorageCell;
+} blok_Binding;
 
 typedef struct blok_ToplevelScope {
     blok_Arena arena;
@@ -187,21 +187,21 @@ typedef struct blok_ToplevelScope {
 
     /*DEBUG INFO*/
     const char * filename;
-} blok_ToplevelScope;
+} blok_Toplevel;
 
 typedef struct blok_LocalScope {
     struct blok_LocalScope * parent;
-    blok_ToplevelScope * context;
+    blok_Toplevel * toplevel;
     blok_Arena arena;
     blok_Table bindings;
-} blok_LocalScope;
+} blok_Scope;
 
 
 
 
 
-void blok_scope_close(blok_Scope * b) {
-    blok_arena_free(&b->arena);
+void blok_scope_close(blok_Scope * s) {
+    blok_arena_free(&s->arena);
 }
 
 
@@ -770,6 +770,9 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
                 return result;
             }
         case BLOK_TAG_TYPE:
+            blok_fatal_error(NULL, "TODO");
+            return blok_make_nil();
+        case BLOK_TAG_BINDING:
             blok_fatal_error(NULL, "TODO");
             return blok_make_nil();
     }

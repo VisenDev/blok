@@ -2,7 +2,6 @@
 #include "blok_obj.c"
 #include "blok_reader.c"
 #include "blok_evaluator.c"
-#include "blok_compiler.c"
 
 int main(void) {
     blok_arena_run_tests();
