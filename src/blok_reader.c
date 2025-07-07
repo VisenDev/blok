@@ -117,37 +117,81 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
     }
 }
 
+
+bool blok_reader_is_operator_symbol_char(char ch) {
+    return ch == '<' || ch == '|' || ch == '>' || ch == '=' || ch == '&';
+}
+
+bool blok_reader_is_begin_symbol_char(char ch) {
+    return isalpha(ch) || ch == '#' || ch == '_'|| blok_reader_is_operator_symbol_char(ch);
+}
+
 bool blok_reader_is_symbol_char(char ch) {
-    return ch == '_' || ch == '[' || ch == ']' || isalpha(ch) || isdigit(ch);
+    return ch == '_' || blok_reader_is_operator_symbol_char(ch) || isalpha(ch) || isdigit(ch);
 }
 
 blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r);
 
-blok_Obj blok_reader_parse_symbol(blok_Arena * b, blok_Reader* r) {
-    assert(isalpha(blok_reader_peek(r)));
+blok_Obj blok_reader_parse_symbol(blok_Arena * a, blok_Reader* r) {
     blok_Symbol sym = {0};
     uint32_t i = 0;
-    char ch = blok_reader_getc(r);
-    sym.buf[i++] = ch;
+
+    //# PREFIX
+    if(blok_reader_peek(r) == '#') {
+        blok_reader_skip_char(r, '#');
+        sym.prefix = BLOK_PREFIX_HASH; 
+    } else {
+        sym.prefix = BLOK_PREFIX_NIL;
+    }
+
+    //char ch = blok_reader_getc(r);
+    //sym.buf[i++] = ch;
     while(blok_reader_is_symbol_char(blok_reader_peek(r))) {
         sym.buf[i++] = blok_reader_getc(r);
         if(i + 2 > sizeof(sym.buf)) {
             blok_fatal_error(&r->src_info, "symbol too long, %s\n", sym.buf);
         }
     }
+    blok_reader_skip_whitespace(r);
+    int suffix_i = 0;
+    while(blok_reader_peek(r) == '[' || blok_reader_peek(r) == '*') {
+        char ch = blok_reader_getc(r);
+        if(suffix_i + 1 > BLOK_SYMBOL_MAX_SUFFIX_COUNT) {
+          blok_fatal_error(&r->src_info,
+                           "Suffix provided for symbol is too long, the "
+                           "maximum length of a suffix is %d items",
+                           BLOK_SYMBOL_MAX_SUFFIX_COUNT);
+        }
+        if(ch == '*') {
+            sym.suffix[suffix_i++] = BLOK_SUFFIX_ASTERISK;
+            sym.suffix[suffix_i]= BLOK_SUFFIX_NIL;
+        } else if (ch == '[') {
+            blok_reader_skip_whitespace(r);
+            char second_ch = blok_reader_getc(r);
+            if(second_ch != ']') {
+                blok_fatal_error(&r->src_info, "Expected closing bracket, found %c", second_ch);
+            }
+            sym.suffix[suffix_i++] = BLOK_SUFFIX_BRACKET_PAIR;
+            sym.suffix[suffix_i]= BLOK_SUFFIX_NIL;
+        }
+        blok_reader_skip_whitespace(r);
+    }
+    blok_reader_skip_whitespace(r);
 
     if(blok_reader_peek(r) == ':') {
-        blok_KeyValue* kv = blok_keyvalue_allocate(b);
+        blok_KeyValue* kv = blok_keyvalue_allocate(a);
         blok_reader_skip_char(r, ':');
         kv->key = sym; 
-        kv->value = blok_reader_parse_obj(b, r);
+        kv->value = blok_reader_parse_obj(a, r);
         blok_Obj result = blok_obj_from_keyvalue(kv);
         result.src_info = r->src_info;
         return result;
     } else {
-        blok_Obj result =  blok_make_symbol(b, sym.buf);
-        result.src_info = r->src_info;
-        return result;
+        blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
+        *result = sym;
+        blok_Obj result_obj = blok_obj_from_symbol(result);
+        result_obj.src_info = r->src_info;
+        return result_obj;
     }
 }
 
@@ -202,7 +246,7 @@ blok_Obj blok_reader_parse_obj(blok_Arena * a, blok_Reader * r) {
         return blok_reader_parse_list(a, r);
     } else if(ch == '"') {
         return blok_reader_parse_string(a, r);
-    } else if(isalpha(ch)) {
+    } else if(blok_reader_is_begin_symbol_char(ch)) {
         return blok_reader_parse_symbol(a, r);
     } else {
         blok_fatal_error(&r->src_info, "Encountered unexpected character '%c' when parsing object", ch);
@@ -225,7 +269,7 @@ blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     if(r.fp == NULL) {
         blok_fatal_error(NULL, "Failed to open file: %s\n", path);
     }
-    blok_list_append(result, blok_make_symbol(a, "progn"));
+    blok_list_append(result, blok_make_symbol(a, "toplevel"));
     blok_reader_skip_whitespace(&r);
     while(!blok_reader_eof(&r) && blok_reader_peek(&r) != ')') {
         blok_list_append(result, blok_reader_parse_obj(a, &r));

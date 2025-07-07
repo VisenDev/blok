@@ -140,9 +140,23 @@ typedef struct {
     blok_Arena * arena;
 } blok_String;
 
+typedef enum {
+    BLOK_SUFFIX_NIL = '\0',
+    BLOK_SUFFIX_ASTERISK = '*',
+    BLOK_SUFFIX_BRACKET_PAIR = '[',
+} blok_Suffix;
+
+typedef enum {
+    BLOK_PREFIX_NIL = '\0',
+    BLOK_PREFIX_HASH = '#'
+} blok_Prefix;
+
 #define BLOK_SYMBOL_MAX_LEN 64
+#define BLOK_SYMBOL_MAX_SUFFIX_COUNT 8
 typedef struct {
+    blok_Prefix prefix;
     char buf[BLOK_SYMBOL_MAX_LEN];
+    blok_Suffix suffix[BLOK_SYMBOL_MAX_SUFFIX_COUNT];
 } blok_Symbol;
 
 
@@ -328,6 +342,7 @@ blok_Obj blok_make_string(blok_Arena * b, const char * str) {
 
 blok_Obj blok_make_symbol(blok_Arena * b, const char * str) {
     blok_Symbol * sym = blok_arena_alloc(b, sizeof(blok_Symbol));
+    memset(sym, 0, sizeof(blok_Symbol));
     strncpy(sym->buf, str, BLOK_SYMBOL_MAX_LEN - 1);
     blok_Obj result = {0};
     result.as.ptr = sym;
@@ -695,7 +710,7 @@ blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String * str
 
 blok_Symbol * blok_symbol_copy(blok_Arena * destination_scope, blok_Symbol * sym) {
     blok_Symbol * result = blok_symbol_allocate(destination_scope);
-    memcpy(result->buf, sym->buf, sizeof(result->buf));
+    memcpy(result, sym, sizeof(blok_Symbol));
     return result;
 }
 
@@ -826,8 +841,30 @@ typedef enum {
 
 void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style);
 
+
+void blok_symbol_fprint(FILE * fp, const blok_Symbol * sym, blok_Style style) {
+    (void) style;
+    if(sym->prefix == BLOK_PREFIX_HASH) {
+        fprintf(fp, "#");
+    }
+    fprintf(fp, "%s", sym->buf);
+    for(const blok_Suffix * suffix = sym->suffix; *suffix != BLOK_SUFFIX_NIL; ++suffix) {
+        switch(*suffix) {
+            case BLOK_SUFFIX_ASTERISK:
+                fprintf(fp, "*");
+                break;
+            case BLOK_SUFFIX_BRACKET_PAIR:
+                fprintf(fp, "[]");
+                break;
+            case BLOK_SUFFIX_NIL:
+                assert(0); /*This should be unreachable*/
+        }
+    }
+}
+
 void blok_keyvalue_fprint(FILE * fp, blok_KeyValue * const kv, blok_Style style) {
-    fprintf(fp, "%s:", kv->key.buf);
+    blok_symbol_fprint(fp, &kv->key, style);
+    fprintf(fp, ":");
     blok_obj_fprint(fp, kv->value, style);
 }
 
@@ -863,6 +900,7 @@ void blok_fprint_escape_sequences(FILE * fp, const char * str, size_t max) {
         }
     }
 }
+
 
 void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style) {
     switch(obj.tag) {
@@ -900,7 +938,7 @@ void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style) {
             }
             break;
         case BLOK_TAG_SYMBOL:
-            fprintf(fp, "%s", blok_symbol_from_obj(obj)->buf);
+            blok_symbol_fprint(fp, blok_symbol_from_obj(obj), style);
             break;
         case BLOK_TAG_KEYVALUE:
             blok_keyvalue_fprint(fp, blok_keyvalue_from_obj(obj), style);

@@ -1,7 +1,13 @@
-(#let hello (Obj 1))
-(#variable hello 1)
+(#let num 10)
+
+(#procedure Int factorial (Int num)
+    (when (#expr num <= 1)
+        (return 1)
+        )
+    (return (factorial (sub num 1)))
+    )
 
 (#procedure Int main ()
-    (print_int (factorial 10))
+    (print_int (factorial num))
     (return 0)
     )

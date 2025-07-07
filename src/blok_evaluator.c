@@ -122,7 +122,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
             {
 
                 blok_Arena tmp = {0};
-                assert(blok_scope_lookup(&tmp, b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
+                //assert(blok_scope_lookup(&tmp, b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
                 blok_arena_free(&tmp);
                 blok_Symbol * sym = blok_symbol_from_obj(obj);
                 blok_Symbol direct = *sym;
