@@ -1,21 +1,7 @@
-(Int hello 1)
+(#let hello (Obj 1))
+(#variable hello 1)
 
-(fn Int factorial (Int num)
-    (let i 10)
-    (if (num:lte 1)
-        then 1
-        else (factorial (num:sub 1))
-        )
-    )
-
-(Int foo (factorial 10))
-
-(fn Void test ()
-    (print_int foo)
-    )
-
-
-(procedure Int main (Int reference argc, Char[][] argv)
+(#procedure Int main ()
     (print_int (factorial 10))
-    0
+    (return 0)
     )

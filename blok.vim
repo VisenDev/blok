@@ -18,7 +18,6 @@ highlight link blokString String
 syntax match blokInteger /\v[0-9]+/ containedin=ALLBUT,blokComment,blokString
 highlight link blokInteger Number
 
-
 " Keyvalue delimiter
 syntax match blokColon /:/ 
 highlight link blokColon Keyword
@@ -32,8 +31,12 @@ syntax match blokParen /[()]/ containedin=ALLBUT,blokSexprHeader
 highlight link blokParen Delimiter 
 
 " Types
-syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>[\[\]]*/
+syntax match blokMacro /#\h\w*/
+highlight link blokMacro Keyword
+
+syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>[\[\]]*/ containedin=ALLBUT,blokMacro
 highlight link blokType Identifier
+
 
 
 
