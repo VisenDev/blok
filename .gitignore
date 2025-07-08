@@ -3,6 +3,7 @@ zig-out
 src/c23
 main
 main_release
+a.out.c
 
 # Prerequisites
 *.d

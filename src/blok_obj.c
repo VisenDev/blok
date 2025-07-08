@@ -400,6 +400,10 @@ bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
     return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf)) == 0;
 }
 
+bool blok_symbol_streql(blok_Symbol sym, const char * str) {
+    return strncmp(sym.buf, str, sizeof(sym.buf)) == 0;
+}
+
 
 bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
     if(lhs.tag != rhs.tag) {

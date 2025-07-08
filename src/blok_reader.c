@@ -269,7 +269,7 @@ blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     if(r.fp == NULL) {
         blok_fatal_error(NULL, "Failed to open file: %s\n", path);
     }
-    blok_list_append(result, blok_make_symbol(a, "toplevel"));
+    //blok_list_append(result, blok_make_symbol(a, "toplevel"));
     blok_reader_skip_whitespace(&r);
     while(!blok_reader_eof(&r) && blok_reader_peek(&r) != ')') {
         blok_list_append(result, blok_reader_parse_obj(a, &r));

@@ -15,7 +15,12 @@ int main(void) {
     blok_obj_print(source, BLOK_STYLE_CODE);
     fflush(stdout);
 
-    blok_evaluator_eval(&b, source);
+    blok_Arena a = {0};
+    FILE * output = fopen("a.out.c", "w");
+    blok_primitive_toplevel(&a, blok_list_from_obj(source), output);
+    fclose(output);
+
+    //blok_evaluator_eval(&b, source);
     blok_arena_free(&b.arena);
 
     return 0;

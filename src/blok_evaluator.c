@@ -150,6 +150,53 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
 }
 
 
+void blok_primitive_procedure(blok_Table * globals, blok_List * sexpr, FILE * output) {
+    (void) sexpr;
+    (void) globals;
+    (void) output;
+}
+
+void blok_primitive_toplevel_let(blok_Table * globals, blok_List * sexpr) {
+    (void) sexpr;
+    (void) globals;
+}
+
+
+//returns a table of globals
+blok_Table * blok_primitive_toplevel(blok_Arena * a, blok_List * sexpr, FILE * output) {
+    blok_Table * globals = blok_table_allocate(a, 16);
+    for(int32_t i = 0; i < sexpr->len; ++i) {
+        blok_Obj item = sexpr->items[i];
+        if(item.tag != BLOK_TAG_LIST) {
+            blok_fatal_error(
+                    &item.src_info,
+                    "Toplevel forms may only be s-expressions (lists), found a %s",
+                    blok_tag_get_name(item.tag));
+        }
+        blok_List * list = blok_list_from_obj(item);
+        if(list->len <= 0) {
+            blok_fatal_error(&item.src_info, "Empty toplevel list");
+        }
+        blok_Obj head = list->items[0];
+        if(head.tag != BLOK_TAG_SYMBOL) {
+            blok_fatal_error(&head.src_info,
+                    "Invalid toplevel form, s-expressions should start "
+                    "with a list, found a %s",
+                    blok_tag_get_name(head.tag));
+        }
+        blok_Symbol * sym = blok_symbol_from_obj(head);
+        if(blok_symbol_streql(*sym, "let")) {
+            blok_primitive_toplevel_let(globals, list);
+        } else if(blok_symbol_streql(*sym, "procedure")) {
+            blok_primitive_procedure(globals, list, output); //TODO create output file
+        } else {
+            blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", sym->buf);
+        }
+    }
+    return globals;
+}
+
+
 /*
 void blok_compiler_compile_list(blok_Scope * b, blok_List * l, FILE * output) {
     (v
