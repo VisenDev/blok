@@ -127,7 +127,7 @@ bool blok_reader_is_begin_symbol_char(char ch) {
 }
 
 bool blok_reader_is_symbol_char(char ch) {
-    return ch == '_' || blok_reader_is_operator_symbol_char(ch) || isalpha(ch) || isdigit(ch);
+    return ch == '_' || ch == '#' || blok_reader_is_operator_symbol_char(ch) || isalpha(ch) || isdigit(ch);
 }
 
 blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r);
@@ -136,16 +136,6 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * a, blok_Reader* r) {
     blok_Symbol sym = {0};
     uint32_t i = 0;
 
-    //# PREFIX
-    if(blok_reader_peek(r) == '#') {
-        blok_reader_skip_char(r, '#');
-        sym.prefix = BLOK_PREFIX_HASH; 
-    } else {
-        sym.prefix = BLOK_PREFIX_NIL;
-    }
-
-    //char ch = blok_reader_getc(r);
-    //sym.buf[i++] = ch;
     while(blok_reader_is_symbol_char(blok_reader_peek(r))) {
         sym.buf[i++] = blok_reader_getc(r);
         if(i + 2 > sizeof(sym.buf)) {

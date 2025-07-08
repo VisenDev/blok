@@ -7,21 +7,17 @@ int main(void) {
     blok_arena_run_tests();
     blok_table_run_tests();
 
-    blok_Scope b = {0};
-    b.bindings = blok_table_init_capacity(&b.arena, 32);
-    blok_scope_bind_builtins(&b);
-
-    blok_Obj source = blok_reader_read_file(&b.arena, "ideal.blok");
+    BLOK_LOG("ran tests");
+    blok_Arena a = {0};
+    blok_Obj source = blok_reader_read_file(&a, "ideal.blok");
+    BLOK_LOG("read file");
     blok_obj_print(source, BLOK_STYLE_CODE);
     fflush(stdout);
 
-    blok_Arena a = {0};
     FILE * output = fopen("a.out.c", "w");
     blok_primitive_toplevel(&a, blok_list_from_obj(source), output);
     fclose(output);
 
-    //blok_evaluator_eval(&b, source);
-    blok_arena_free(&b.arena);
-
+    blok_arena_free(&a);
     return 0;
 }

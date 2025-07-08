@@ -4,6 +4,8 @@
 #include "blok_arena.c"
 #include "blok_obj.c"
 
+#include <ctype.h>
+
 /* TODO, make the contents of a file and a progn different primitives*/
 typedef enum blok_Primitive {
     BLOK_PRIMITIVE_TOPLEVEL,
@@ -156,9 +158,48 @@ void blok_primitive_procedure(blok_Table * globals, blok_List * sexpr, FILE * ou
     (void) output;
 }
 
-void blok_primitive_toplevel_let(blok_Table * globals, blok_List * sexpr) {
-    (void) sexpr;
-    (void) globals;
+bool blok_symbol_is_varname(const blok_Symbol * sym) {
+    const char * ch = sym->buf;
+    if(!isalpha(*ch) && !islower(*ch) && *ch != '_') {
+        return false;   
+    }
+    for(;*ch != 0; ++ch) {
+        if(!isalpha(*ch) && !islower(*ch) && *ch != '_' && !isdigit(*ch)) {
+            return false; 
+        }
+    }
+    return true;
+}
+
+blok_Type blok_expr_infer_type(blok_Arena * a, blok_Obj expr) {
+    (void) a;
+    (void) expr;
+    blok_fatal_error(NULL, "TODO: implement type inference");
+    return (blok_Type){0}; 
+}
+
+void blok_primitive_toplevel_let(blok_Table * globals, blok_Obj sexpr_obj) {
+    blok_List * sexpr = blok_list_from_obj(sexpr_obj);
+    if(sexpr->len != 3) {
+        blok_fatal_error(&sexpr_obj.src_info, "Invalid #let form, expected (#let <name> <value>)");
+    }
+    blok_Obj let = sexpr->items[0];
+    assert(let.tag == BLOK_TAG_SYMBOL);
+    assert(blok_symbol_streql(blok_symbol_from_obj(let), "#let"));
+    blok_Obj name_obj = sexpr->items[1];
+    if(name_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&name_obj.src_info, "Expected symbol inside #let form, found %s", blok_tag_get_name(name_obj.tag));
+    }
+    blok_Symbol * name = blok_symbol_from_obj(name_obj);
+    if(!blok_symbol_is_varname(name)) {
+        blok_fatal_error(&name_obj.src_info, "Invalid variable name provided inside #let form: %s", name->buf);
+    }
+    if(blok_table_contains_key(globals, *name)) {
+        blok_fatal_error(&name_obj.src_info, "Multiply defined symbol: %s", name->buf); 
+    }
+    blok_Obj expr = sexpr->items[2];
+    blok_Type type = blok_expr_infer_type(globals->arena, expr);
+    (void) type;
 }
 
 
@@ -185,9 +226,9 @@ blok_Table * blok_primitive_toplevel(blok_Arena * a, blok_List * sexpr, FILE * o
                     blok_tag_get_name(head.tag));
         }
         blok_Symbol * sym = blok_symbol_from_obj(head);
-        if(blok_symbol_streql(*sym, "let")) {
-            blok_primitive_toplevel_let(globals, list);
-        } else if(blok_symbol_streql(*sym, "procedure")) {
+        if(blok_symbol_streql(sym, "#let")) {
+            blok_primitive_toplevel_let(globals, item);
+        } else if(blok_symbol_streql(sym, "#procedure")) {
             blok_primitive_procedure(globals, list, output); //TODO create output file
         } else {
             blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", sym->buf);

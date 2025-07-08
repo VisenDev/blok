@@ -2,8 +2,8 @@
 #define BLOK_OBJ_C
 
 #include <stdlib.h>
-#include <errno.h>
 #include <stdbool.h>
+#include <errno.h>
 #include <assert.h>
 #include <stdalign.h>
 #include <stdarg.h>
@@ -16,6 +16,7 @@
 #include "blok_arena.c"
 
 #define BLOK_NORETURN __attribute__((noreturn))
+#define BLOK_LOG(str) do { fprintf(stderr, "LOG: " str "\n"); fflush(stderr); } while(0)
 
 BLOK_NORETURN 
 void blok_abort(void) {
@@ -146,15 +147,9 @@ typedef enum {
     BLOK_SUFFIX_BRACKET_PAIR = '[',
 } blok_Suffix;
 
-typedef enum {
-    BLOK_PREFIX_NIL = '\0',
-    BLOK_PREFIX_HASH = '#'
-} blok_Prefix;
-
 #define BLOK_SYMBOL_MAX_LEN 64
 #define BLOK_SYMBOL_MAX_SUFFIX_COUNT 8
 typedef struct {
-    blok_Prefix prefix;
     char buf[BLOK_SYMBOL_MAX_LEN];
     blok_Suffix suffix[BLOK_SYMBOL_MAX_SUFFIX_COUNT];
 } blok_Symbol;
@@ -400,8 +395,8 @@ bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
     return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf)) == 0;
 }
 
-bool blok_symbol_streql(blok_Symbol sym, const char * str) {
-    return strncmp(sym.buf, str, sizeof(sym.buf)) == 0;
+bool blok_symbol_streql(const blok_Symbol * sym, const char * str) {
+    return strcmp(sym->buf, str) == 0;
 }
 
 
@@ -848,9 +843,6 @@ void blok_obj_fprint(FILE * fp, blok_Obj obj, blok_Style style);
 
 void blok_symbol_fprint(FILE * fp, const blok_Symbol * sym, blok_Style style) {
     (void) style;
-    if(sym->prefix == BLOK_PREFIX_HASH) {
-        fprintf(fp, "#");
-    }
     fprintf(fp, "%s", sym->buf);
     for(const blok_Suffix * suffix = sym->suffix; *suffix != BLOK_SUFFIX_NIL; ++suffix) {
         switch(*suffix) {
