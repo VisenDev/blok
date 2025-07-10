@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "blok_arena.c"
+#include "blok_vec.c"
 
 #define BLOK_NORETURN __attribute__((noreturn))
 #define BLOK_LOG(str) do { fprintf(stderr, "LOG: " str "\n"); fflush(stderr); } while(0)
@@ -58,41 +59,6 @@ void blok_fatal_error_internal(
 #define blok_fatal_error(src_info, /*fmt,*/ ...) \
     blok_fatal_error_internal(src_info, __FILE__, __LINE__, __VA_ARGS__ )
 
-
-#define blok_Vec(Type) struct { Type * items; int32_t len; int32_t cap; }
-
-#define blok_vec_item_sizeof(vec) (sizeof(*(vec)->item))
-
-#define blok_vec_new_cap(vec) ((vec)->cap * 2 + 1)
-
-#define blok_vec_cap_in_bytes (blok_vec_item_sizeof(vec) * (vec)->cap)
-
-#define blok_vec_append(arena_ptr, vec_ptr, item) do { \
-    /*TODO clean up these asserts*/ \
-    _Static_assert(sizeof(arena_ptr) == sizeof(void*)); \
-    _Static_assert(sizeof(vec_ptr) == sizeof(void*)); \
-    \
-    if((vec_ptr)->len + 1 > (vec_ptr)->cap) { \
-        (vec_ptr)->cap = blok_vec_ptr_new_cap(vec_ptr); \
-        (vec_ptr)->items = blok_arena_realloc(arena_ptr, vec_ptr->items, blok_vec_ptr_cap_in_bytes(vec_ptr)); \
-    } \
-    (vec_ptr)->items[(vec_ptr)->len++] = item; \
-while (0)
-
-/*TODO finish blok_State*****/
-typedef int64_t blok_SymbolId;
-typedef int64_t blok_TypeId;
-
-//TODO delete these forward definitions
-typedef struct blok_Type blok_Type;
-typedef struct blok_Symbol blok_Symbol;
-
-typedef struct {
-    blok_Arena persistent_arena;
-    blok_Vec(blok_Type) types; 
-    blok_Vec(blok_Symbol) symbols;
-    blok_Vec(blok_Arena) available_arenas;
-} blok_State;
 
 
 typedef enum {
@@ -241,6 +207,18 @@ typedef struct blok_LocalScope {
 } blok_Scope;
 
 
+
+
+/*TODO finish blok_State*****/
+typedef int64_t blok_SymbolId;
+typedef int64_t blok_TypeId;
+
+typedef struct {
+    blok_Arena persistent_arena;
+    blok_Vec(blok_Type) types; 
+    blok_Vec(blok_Symbol) symbols;
+    blok_Vec(blok_Arena) arenas;
+} blok_State;
 
 
 

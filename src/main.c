@@ -1,10 +1,12 @@
 #include "blok_arena.c"
+#include "blok_vec.c"
 #include "blok_obj.c"
 #include "blok_reader.c"
 #include "blok_evaluator.c"
 
 int main(void) {
     blok_arena_run_tests();
+    blok_vec_run_tests();
     blok_table_run_tests();
 
     BLOK_LOG("ran tests");
