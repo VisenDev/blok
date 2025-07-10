@@ -9,10 +9,9 @@ int main(void) {
     blok_vec_run_tests();
     blok_table_run_tests();
 
-    BLOK_LOG("ran tests");
     blok_Arena a = {0};
+    blok_arena_reserve(&a, 500, 1024);
     blok_Obj source = blok_reader_read_file(&a, "ideal.blok");
-    BLOK_LOG("read file");
     blok_obj_print(source, BLOK_STYLE_CODE);
     fflush(stdout);
 
