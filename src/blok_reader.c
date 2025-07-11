@@ -131,9 +131,9 @@ bool blok_reader_is_symbol_char(char ch) {
     return ch == '_' || ch == '#' || blok_reader_is_operator_symbol_char(ch) || isalpha(ch) || isdigit(ch);
 }
 
-blok_Obj blok_reader_parse_obj(blok_Arena * b, blok_Reader * r);
+blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * b, blok_Reader * r);
 
-blok_Obj blok_reader_parse_symbol(blok_Arena * a, blok_Reader* r) {
+blok_Obj blok_reader_parse_symbol(blok_State * s, blok_Arena * a, blok_Reader* r) {
     blok_Symbol sym = {0};
     uint32_t i = 0;
 
@@ -172,21 +172,20 @@ blok_Obj blok_reader_parse_symbol(blok_Arena * a, blok_Reader* r) {
     if(blok_reader_peek(r) == ':') {
         blok_KeyValue* kv = blok_keyvalue_allocate(a);
         blok_reader_skip_char(r, ':');
-        kv->key = sym; 
-        kv->value = blok_reader_parse_obj(a, r);
+        kv->key = blok_symbol_intern(s, sym); 
+        kv->value = blok_reader_parse_obj(s, a, r);
         blok_Obj result = blok_obj_from_keyvalue(kv);
         result.src_info = r->src_info;
         return result;
     } else {
-        blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
-        *result = sym;
-        blok_Obj result_obj = blok_obj_from_symbol(result);
+        blok_SymbolId result = blok_symbol_intern(s, sym);
+        blok_Obj result_obj = blok_make_symbol(result);
         result_obj.src_info = r->src_info;
         return result_obj;
     }
 }
 
-blok_Obj blok_reader_parse_list(blok_Arena * a, blok_Reader * r) {
+blok_Obj blok_reader_parse_list(blok_State * s, blok_Arena * a, blok_Reader * r) {
         blok_reader_skip_char(r, '(');
         blok_reader_skip_whitespace(r);
 
@@ -204,7 +203,7 @@ blok_Obj blok_reader_parse_list(blok_Arena * a, blok_Reader * r) {
             sublists[sublist_count++] = blok_list_allocate(a, 4);
 
             while(blok_reader_peek(r) != ')' && blok_reader_peek(r) != ',' && !blok_reader_eof(r)) {
-                blok_list_append(sublists[sublist_count - 1], blok_reader_parse_obj(a, r));
+                blok_list_append(sublists[sublist_count - 1], blok_reader_parse_obj(s, a, r));
                 blok_reader_skip_whitespace(r);
             }
 
@@ -227,25 +226,25 @@ blok_Obj blok_reader_parse_list(blok_Arena * a, blok_Reader * r) {
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
-blok_Obj blok_reader_parse_obj(blok_Arena * a, blok_Reader * r) {
+blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * a, blok_Reader * r) {
     blok_reader_skip_whitespace(r);
     const char ch = blok_reader_peek(r);
 
     if(isdigit(ch)) {
         return blok_reader_parse_int(r); 
     } else if(ch == '(') {
-        return blok_reader_parse_list(a, r);
+        return blok_reader_parse_list(s, a, r);
     } else if(ch == '"') {
         return blok_reader_parse_string(a, r);
     } else if(blok_reader_is_begin_symbol_char(ch)) {
-        return blok_reader_parse_symbol(a, r);
+        return blok_reader_parse_symbol(s, a, r);
     } else {
         blok_fatal_error(&r->src_info, "Encountered unexpected character '%c' when parsing object", ch);
     }
     /*return blok_make_nil();*/
 }
 
-blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
+blok_Obj blok_reader_read_file(blok_State * s, blok_Arena * a, char const * path) {
     blok_List * result = blok_list_allocate(a, 32);
 
     blok_Reader r = {0};
@@ -263,7 +262,7 @@ blok_Obj blok_reader_read_file(blok_Arena * a, char const * path) {
     //blok_list_append(result, blok_make_symbol(a, "toplevel"));
     blok_reader_skip_whitespace(&r);
     while(!blok_reader_eof(&r) && blok_reader_peek(&r) != ')') {
-        blok_list_append(result, blok_reader_parse_obj(a, &r));
+        blok_list_append(result, blok_reader_parse_obj(s, a, &r));
         blok_reader_skip_whitespace(&r);
     }
     fclose(r.fp);

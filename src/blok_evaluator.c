@@ -19,6 +19,7 @@ blok_Obj blok_make_primitive(blok_Primitive data) {
     return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
 }
 
+/*
 blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_Symbol sym) {
     blok_Obj result = blok_table_get(destination_arena, &b->bindings, sym);
     if(result.tag == BLOK_TAG_NIL && b->parent != NULL) {
@@ -150,16 +151,18 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
 
     return blok_make_nil();
 }
+*/
 
-
-void blok_primitive_procedure(blok_Table * globals, blok_List * sexpr, FILE * output) {
+void blok_primitive_procedure(blok_State * s, blok_Table * globals, blok_List * sexpr, FILE * output) {
+    (void) s;
     (void) sexpr;
     (void) globals;
     (void) output;
 }
 
-bool blok_symbol_is_varname(const blok_Symbol * sym) {
-    const char * ch = sym->buf;
+bool blok_symbol_is_varname(blok_State * s, blok_SymbolId symbol) {
+    blok_Symbol sym = blok_symbol_from_id(s, symbol);
+    const char * ch = sym.buf;
     if(!isalpha(*ch) && !islower(*ch) && *ch != '_') {
         return false;   
     }
@@ -178,24 +181,26 @@ blok_Type blok_expr_infer_type(blok_Arena * a, blok_Obj expr) {
     return (blok_Type){0}; 
 }
 
-void blok_primitive_toplevel_let(blok_Table * globals, blok_Obj sexpr_obj) {
+void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj sexpr_obj) {
     blok_List * sexpr = blok_list_from_obj(sexpr_obj);
     if(sexpr->len != 3) {
         blok_fatal_error(&sexpr_obj.src_info, "Invalid #let form, expected (#let <name> <value>)");
     }
     blok_Obj let = sexpr->items[0];
     assert(let.tag == BLOK_TAG_SYMBOL);
-    assert(blok_symbol_streql(blok_symbol_from_obj(let), "#let"));
+    assert(blok_symbol_streql(s, blok_symbol_from_obj(let), "#let"));
     blok_Obj name_obj = sexpr->items[1];
     if(name_obj.tag != BLOK_TAG_SYMBOL) {
         blok_fatal_error(&name_obj.src_info, "Expected symbol inside #let form, found %s", blok_tag_get_name(name_obj.tag));
     }
-    blok_Symbol * name = blok_symbol_from_obj(name_obj);
-    if(!blok_symbol_is_varname(name)) {
-        blok_fatal_error(&name_obj.src_info, "Invalid variable name provided inside #let form: %s", name->buf);
+    blok_SymbolId name = blok_symbol_from_obj(name_obj);
+    if(!blok_symbol_is_varname(s, name)) {
+        blok_Symbol namesym = blok_symbol_from_id(s, name);
+        blok_fatal_error(&name_obj.src_info, "Invalid variable name provided inside #let form: %s", namesym.buf);
     }
-    if(blok_table_contains_key(globals, *name)) {
-        blok_fatal_error(&name_obj.src_info, "Multiply defined symbol: %s", name->buf); 
+    if(blok_table_contains_key(globals, name)) {
+        blok_Symbol namesym = blok_symbol_from_id(s, name);
+        blok_fatal_error(&name_obj.src_info, "Multiply defined symbol: %s", namesym.buf); 
     }
     blok_Obj expr = sexpr->items[2];
     blok_Type type = blok_expr_infer_type(globals->arena, expr);
@@ -204,7 +209,7 @@ void blok_primitive_toplevel_let(blok_Table * globals, blok_Obj sexpr_obj) {
 
 
 //returns a table of globals
-blok_Table * blok_primitive_toplevel(blok_Arena * a, blok_List * sexpr, FILE * output) {
+blok_Table * blok_primitive_toplevel(blok_State * s, blok_Arena * a, blok_List * sexpr, FILE * output) {
     blok_Table * globals = blok_table_allocate(a, 16);
     for(int32_t i = 0; i < sexpr->len; ++i) {
         blok_Obj item = sexpr->items[i];
@@ -225,13 +230,14 @@ blok_Table * blok_primitive_toplevel(blok_Arena * a, blok_List * sexpr, FILE * o
                     "with a list, found a %s",
                     blok_tag_get_name(head.tag));
         }
-        blok_Symbol * sym = blok_symbol_from_obj(head);
-        if(blok_symbol_streql(sym, "#let")) {
-            blok_primitive_toplevel_let(globals, item);
-        } else if(blok_symbol_streql(sym, "#procedure")) {
-            blok_primitive_procedure(globals, list, output); //TODO create output file
+        blok_SymbolId sym = blok_symbol_from_obj(head);
+        if(blok_symbol_streql(s, sym, "#let")) {
+            blok_primitive_toplevel_let(s, globals, item);
+        } else if(blok_symbol_streql(s, sym, "#procedure")) {
+            blok_primitive_procedure(s, globals, list, output); //TODO create output file
         } else {
-            blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", sym->buf);
+            blok_Symbol symbol = blok_symbol_from_id(s, sym);
+            blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", symbol.buf);
         }
     }
     return globals;
