@@ -205,6 +205,7 @@ void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj 
     blok_Obj expr = sexpr->items[2];
     blok_Type type = blok_expr_infer_type(globals->arena, expr);
     (void) type;
+    (void) let;
 }
 
 

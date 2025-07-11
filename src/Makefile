@@ -21,6 +21,9 @@ run_release: main_release
 	./main_release
 
 clean:
-	trash 
+	if [ -e main ]; then trash main; fi
+	if [ -e main_release ]; then trash main_release; fi
+	if [ -e *dSYM ]; then trash main_release; fi
+	if [ -e a.out.c ]; then trash a.out.c; fi
 
 .PHONY clean run run_release:
