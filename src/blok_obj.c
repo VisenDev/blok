@@ -3,7 +3,6 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
-#include <errno.h>
 #include <assert.h>
 #include <stdalign.h>
 #include <stdarg.h>
@@ -73,27 +72,62 @@ typedef enum {
     BLOK_TAG_FUNCTION,
     BLOK_TAG_BOOL,
     BLOK_TAG_TYPE,
-    BLOK_TAG_BINDING,
+    BLOK_TAG_VARIABLE,
 } blok_Tag;
 
-
-struct blok_Type;
+typedef int64_t blok_SymbolId;
+typedef int64_t blok_TypeId;
 
 typedef enum {
-    BLOK_TYPETAG_ANY,
+    /*ANYTYPE*/
+    BLOK_TYPETAG_OBJ,
+
+    /*FUNDAMENTAL TYPES*/
     BLOK_TYPETAG_INT,
-    BLOK_TYPETAG_LIST,
+    BLOK_TYPETAG_BOOLEAN,
     BLOK_TYPETAG_STRING,
+    BLOK_TYPETAG_SYMBOL,
+    BLOK_TYPETAG_TYPE,
+
+    /*COMPOUND TYPES*/
+    BLOK_TYPETAG_LIST,
+    BLOK_TYPETAG_STRUCT,
+    BLOK_TYPETAG_UNION,
+    BLOK_TYPETAG_OPTIONAL
 } blok_TypeTag;
 
 typedef struct {
-    struct blok_Type * child; 
-} blok_TypeList;
+    blok_TypeId item_type;
+} blok_ListType;
+
+typedef struct {
+    blok_SymbolId name;
+    blok_TypeId type;
+} blok_FieldType;
+
+typedef struct {
+    blok_FieldType * items; /*fields*/
+    int32_t len;
+    int32_t cap;
+} blok_StructType;
+
+typedef struct {
+    blok_FieldType * items; /*fields*/
+    int32_t len;
+    int32_t cap;
+} blok_UnionType;
+
+typedef struct {
+    blok_TypeId type;
+} blok_OptionalType;
 
 typedef struct blok_Type {
     blok_TypeTag tag; 
     union {
-        const struct blok_Type * child;
+        blok_ListType list;
+        blok_UnionType union_;
+        blok_StructType struct_;
+        blok_OptionalType optional;
     } as;
 } blok_Type;
 
@@ -112,7 +146,7 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
         case BLOK_TAG_BOOL:      return "BLOK_TAG_BOOL";
         case BLOK_TAG_TYPE:      return "BLOK_TAG_TYPE";
-        case BLOK_TAG_BINDING:   return "BLOK_TAG_BINDING";
+        case BLOK_TAG_VARIABLE:   return "BLOK_TAG_VARIABLE";
     }
 }
 
@@ -155,9 +189,8 @@ typedef struct {
     blok_Suffix suffix[BLOK_SYMBOL_MAX_SUFFIX_COUNT];
 } blok_Symbol;
 
-
 typedef struct {
-    blok_Symbol key;
+    blok_SymbolId key;
     blok_Obj value;
 } blok_KeyValue;
 
@@ -209,9 +242,6 @@ typedef struct blok_LocalScope {
 
 
 
-/*TODO finish blok_State*****/
-typedef int64_t blok_SymbolId;
-typedef int64_t blok_TypeId;
 
 typedef struct {
     blok_Arena persistent_arena;
@@ -243,17 +273,17 @@ void * blok_ptr_from_obj(blok_Obj obj) {
     return obj.as.ptr;
 }
 
-blok_Symbol blok_symbol_from_char_ptr(const char * ptr) {
-    blok_Symbol sym = {0};
-    strncpy(sym.buf, ptr, sizeof(sym.buf) - 1);
-    return sym;
-}
+//blok_SymbolId blok_symbol_from_string(blok_State * s, const char * str) {
+//    blok_Symbol sym = {0};
+//    //strncpy(sym.buf, ptr, sizeof(sym.buf) - 1);
+//    //return sym;
+//}
 
-blok_Symbol * blok_symbol_allocate(blok_Arena * a) {
-    blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
-    memset(result, 0, sizeof(blok_Symbol));
-    return result;
-}
+//blok_Symbol * blok_symbol_allocate(blok_Arena * a) {
+//    blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
+//    memset(result, 0, sizeof(blok_Symbol));
+//    return result;
+//}
 
 blok_Obj blok_obj_from_ptr(void * ptr, blok_Tag tag) {
     assert(((uintptr_t)ptr& 0xf) == 0);
@@ -267,7 +297,7 @@ blok_Obj blok_obj_from_list(blok_List * l) { return blok_obj_from_ptr(l, BLOK_TA
 blok_Obj blok_obj_from_keyvalue(blok_KeyValue* l) { return blok_obj_from_ptr(l, BLOK_TAG_KEYVALUE); }
 blok_Obj blok_obj_from_table(blok_Table * l) { return blok_obj_from_ptr(l, BLOK_TAG_TABLE); }
 blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
-blok_Obj blok_obj_from_symbol(blok_Symbol * s) { return blok_obj_from_ptr(s, BLOK_TAG_SYMBOL); }
+//blok_Obj blok_obj_from_symbol(blok_Symbol * s) { return blok_obj_from_ptr(s, BLOK_TAG_SYMBOL); }
 blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
 
 blok_Obj blok_make_int(int32_t data) {
@@ -440,7 +470,7 @@ bool blok_nil_equal(blok_Obj obj) {
     return obj.tag == BLOK_TAG_NIL;
 }
 
-bool blok_symbol_empty(blok_Symbol sym) {
+bool blok_symbol_empty(blok_SymbolId sym) {
     return sym.buf[0] == 0;
 }
 
@@ -799,7 +829,7 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
         case BLOK_TAG_TYPE:
             blok_fatal_error(NULL, "TODO");
             return blok_make_nil();
-        case BLOK_TAG_BINDING:
+        case BLOK_TAG_VARIABLE:
             blok_fatal_error(NULL, "TODO");
             return blok_make_nil();
     }

@@ -2,6 +2,7 @@
 #define BLOK_READER_C
 
 #include <ctype.h>
+#include <errno.h>
 
 #include "blok_obj.c"
 
