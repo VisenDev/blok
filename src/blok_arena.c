@@ -39,39 +39,6 @@ blok_Allocation blok_arena_allocation_new(size_t bytes) {
     return new;
 }
 
-#define BLOK_QSORT_LHS_FIRST -1
-#define BLOK_QSORT_EQUAL      0
-#define BLOK_QSORT_RHS_FIRST  1
-
-int blok_arena_allocation_compare(const void * lhs_ptr, const void * rhs_ptr) {
-    /*
-     * This compare function should work such that inactive allocations are 
-     * stored before active allocations. And smaller allocations are stored
-     * before larger allocations
-     */
-    const blok_Allocation * lhs = lhs_ptr;
-    const blok_Allocation * rhs = rhs_ptr;    
-    if(lhs->active != rhs->active) {
-        if(rhs->active == false) {
-            return BLOK_QSORT_RHS_FIRST;
-        } else {
-            return BLOK_QSORT_LHS_FIRST;
-        }
-    } else {
-        if(rhs->cap < lhs->cap) {
-            return BLOK_QSORT_RHS_FIRST;
-        } else if(rhs->cap > lhs->cap) {
-            return BLOK_QSORT_LHS_FIRST;
-        } else {
-            return BLOK_QSORT_EQUAL;
-        }
-    }
-}
-
-void blok_arena_sort_allocations(blok_Arena * a) {
-    qsort(a->allocations, a->len, sizeof(blok_Allocation), blok_arena_allocation_compare);
-}
-
 void blok_arena_append_allocation(blok_Arena * a, blok_Allocation new) {
     if(a->cap == 0) {
         assert(a->len == 0);
@@ -83,7 +50,6 @@ void blok_arena_append_allocation(blok_Arena * a, blok_Allocation new) {
         a->allocations = realloc(a->allocations, sizeof(blok_Allocation) * a->cap);
     }
     a->allocations[a->len++] = new;
-    blok_arena_sort_allocations(a);
 }
 
 
@@ -101,7 +67,6 @@ void * blok_arena_alloc(blok_Arena * a, size_t bytes) {
         blok_Allocation * allocation = &a->allocations[i];
         if(allocation->active == false && allocation->cap >= bytes) {
             allocation->active = true; 
-            blok_arena_sort_allocations(a);
             return allocation->ptr;
         }
     }

@@ -1,6 +1,6 @@
-(#let num 10)
+(#let count 10)
 
-(#procedure Int factorial (Int num,)
+(#procedure Int factorial (Int num)
     (when (#expr num <= 1)
         (return 1)
         )
@@ -8,6 +8,6 @@
     )
 
 (#procedure Int main ()
-    (print_int (factorial num))
+    (print_int (factorial count))
     (return 0)
     )
