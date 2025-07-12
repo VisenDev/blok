@@ -134,7 +134,7 @@ bool blok_reader_is_symbol_char(char ch) {
 blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * b, blok_Reader * r);
 
 blok_Obj blok_reader_parse_symbol(blok_State * s, blok_Arena * a, blok_Reader* r) {
-    blok_Symbol sym = {0};
+    blok_SymbolData sym = {0};
     uint32_t i = 0;
 
     while(blok_reader_is_symbol_char(blok_reader_peek(r))) {
@@ -172,13 +172,13 @@ blok_Obj blok_reader_parse_symbol(blok_State * s, blok_Arena * a, blok_Reader* r
     if(blok_reader_peek(r) == ':') {
         blok_KeyValue* kv = blok_keyvalue_allocate(a);
         blok_reader_skip_char(r, ':');
-        kv->key = blok_symbol_intern(s, sym); 
+        kv->key = blok_symboldata_intern(s, sym); 
         kv->value = blok_reader_parse_obj(s, a, r);
         blok_Obj result = blok_obj_from_keyvalue(kv);
         result.src_info = r->src_info;
         return result;
     } else {
-        blok_SymbolId result = blok_symbol_intern(s, sym);
+        blok_Symbol result = blok_symboldata_intern(s, sym);
         blok_Obj result_obj = blok_make_symbol(result);
         result_obj.src_info = r->src_info;
         return result_obj;

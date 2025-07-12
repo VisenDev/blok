@@ -6,9 +6,9 @@
 
 int main(void) {
 
-    //blok_arena_run_tests();
-    //blok_vec_run_tests();
-    //blok_table_run_tests();
+    blok_arena_run_tests();
+    blok_vec_run_tests();
+    blok_table_run_tests();
 
     blok_Arena a = {0};
     blok_State s = {0};

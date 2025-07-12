@@ -75,8 +75,9 @@ typedef enum {
     BLOK_TAG_VARIABLE,
 } blok_Tag;
 
-typedef int32_t blok_SymbolId;
-#define BLOK_SYMBOLID_NIL 0 
+typedef int32_t blok_Symbol;
+#define BLOK_SYMBOL_NIL 0 
+
 typedef int32_t blok_TypeId;
 #define BLOK_TYPEID_NIL 0
 
@@ -103,7 +104,7 @@ typedef struct {
 } blok_ListType;
 
 typedef struct {
-    blok_SymbolId name;
+    blok_Symbol name;
     blok_TypeId type;
 } blok_FieldType;
 
@@ -189,10 +190,10 @@ typedef enum {
 typedef struct {
     char buf[BLOK_SYMBOL_MAX_LEN];
     blok_Suffix suffix[BLOK_SYMBOL_MAX_SUFFIX_COUNT];
-} blok_Symbol;
+} blok_SymbolData;
 
 typedef struct {
-    blok_SymbolId key;
+    blok_Symbol key;
     blok_Obj value;
 } blok_KeyValue;
 
@@ -246,22 +247,22 @@ typedef struct blok_LocalScope {
 typedef struct {
     blok_Arena persistent_arena;
     blok_Vec(blok_Type) types; 
-    blok_Vec(blok_Symbol) symbols;
+    blok_Vec(blok_SymbolData) symbols;
     blok_Vec(blok_Arena) arenas;
 } blok_State;
 
-blok_Symbol blok_symbol_from_id(const blok_State * s, blok_SymbolId id) {
+blok_SymbolData blok_symbol_get_data(const blok_State * s, blok_Symbol id) {
     assert(id != 0 && "0 is the NULL symbol");
     assert(id > 0);
     assert(id <= s->symbols.len);
     return s->symbols.items[id - 1];
 }
 
-bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs);
+bool blok_symboldata_equal(blok_SymbolData lhs, blok_SymbolData rhs);
 
-blok_SymbolId blok_symbol_intern(blok_State * s, blok_Symbol sym) {
-    for(blok_SymbolId i = 0; i < s->symbols.len; ++i) {
-        if(blok_symbol_equal(sym, s->symbols.items[i])) {
+blok_Symbol blok_symboldata_intern(blok_State * s, blok_SymbolData sym) {
+    for(blok_Symbol i = 0; i < s->symbols.len; ++i) {
+        if(blok_symboldata_equal(sym, s->symbols.items[i])) {
             return i + 1;
         }
     }
@@ -269,11 +270,11 @@ blok_SymbolId blok_symbol_intern(blok_State * s, blok_Symbol sym) {
     return s->symbols.len;
 }
 
-blok_SymbolId blok_symbol_intern_str(blok_State * s, const char * symbol) {
-    blok_Symbol sym = {0};
+blok_Symbol blok_symbol_intern_str(blok_State * s, const char * symbol) {
+    blok_SymbolData sym = {0};
     assert(strlen(symbol) < sizeof(sym.buf));
     strcpy(sym.buf, symbol);
-    return blok_symbol_intern(s, sym);
+    return blok_symboldata_intern(s, sym);
 }
 
 
@@ -321,15 +322,15 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
 //    return obj.as.ptr;
 //}
 
-//blok_SymbolId blok_symbol_from_string(blok_State * s, const char * str) {
-//    blok_Symbol sym = {0};
+//blok_Symbol blok_symbol_from_string(blok_State * s, const char * str) {
+//    blok_SymbolData sym = {0};
 //    //strncpy(sym.buf, ptr, sizeof(sym.buf) - 1);
 //    //return sym;
 //}
 
-//blok_Symbol * blok_symbol_allocate(blok_Arena * a) {
-//    blok_Symbol * result = blok_arena_alloc(a, sizeof(blok_Symbol));
-//    memset(result, 0, sizeof(blok_Symbol));
+//blok_SymbolData * blok_symbol_allocate(blok_Arena * a) {
+//    blok_SymbolData * result = blok_arena_alloc(a, sizeof(blok_SymbolData));
+//    memset(result, 0, sizeof(blok_SymbolData));
 //    return result;
 //}
 
@@ -425,7 +426,7 @@ blok_Obj blok_make_string(blok_Arena * b, const char * str) {
     return blok_obj_from_ptr(result, BLOK_TAG_STRING);
 }
 
-blok_Obj blok_make_symbol(blok_SymbolId sym) {
+blok_Obj blok_make_symbol(blok_Symbol sym) {
     blok_Obj result = {0};
     result.as.data = sym;
     result.tag = BLOK_TAG_SYMBOL;
@@ -444,7 +445,7 @@ blok_String * blok_string_from_obj(blok_Obj obj) {
     return (blok_String *) obj.as.ptr;
 }
 
-blok_SymbolId blok_symbol_from_obj(blok_Obj obj) {
+blok_Symbol blok_symbol_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_SYMBOL);
     return obj.as.data;
 }
@@ -477,12 +478,16 @@ bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
     }
 }
 
-bool blok_symbol_equal(blok_Symbol lhs, blok_Symbol rhs) {
+bool blok_symbol_empty(blok_Symbol sym) {
+    return sym == BLOK_SYMBOL_NIL;
+}
+
+bool blok_symboldata_equal(blok_SymbolData lhs, blok_SymbolData rhs) {
     return strncmp(lhs.buf, rhs.buf, sizeof(lhs.buf)) == 0;
 }
 
-bool blok_symbol_streql(blok_State * s, const blok_SymbolId sym, const char * str) {
-    blok_Symbol symbol = blok_symbol_from_id(s, sym);
+bool blok_symbol_streql(blok_State * s, const blok_Symbol sym, const char * str) {
+    blok_SymbolData symbol = blok_symbol_get_data(s, sym);
     return strcmp(symbol.buf, str) == 0;
 }
 
@@ -514,7 +519,7 @@ bool blok_nil_equal(blok_Obj obj) {
 }
 
 
-//bool blok_symbol_empty(const blok_State * s, blok_SymbolId sym) {
+//bool blok_symbol_empty(const blok_State * s, blok_Symbol sym) {
 //}
 
 void blok_list_append(blok_List* l, blok_Obj item) {
@@ -548,7 +553,7 @@ void blok_string_append(blok_String * l, char ch) {
 //}
 //
 //
-//int32_t blok_hash(blok_Symbol sym) {
+//int32_t blok_hash(blok_SymbolData sym) {
 //    return blok_hash_char_ptr(sym.buf, (char*)memchr(sym.buf, 0, BLOK_SYMBOL_MAX_LEN) - sym.buf);
 //}
 
@@ -586,7 +591,7 @@ blok_Obj blok_make_table(blok_Arena * a, int32_t cap) {
 blok_KeyValue * blok_table_iterate_next(blok_Table * table) {
     assert(table->iterate_i >= 0);
     for(;table->iterate_i < table->cap; ++table->iterate_i) {
-        if(table->items[table->iterate_i].key != BLOK_SYMBOLID_NIL) {
+        if(!blok_symbol_empty(table->items[table->iterate_i].key)) {
             return &table->items[table->iterate_i++];
         }
     }
@@ -597,7 +602,7 @@ void blok_table_iterate_start(blok_Table * table) {
     table->iterate_i = 0;
 }
 
-blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_SymbolId key) {
+blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
     /*
     function find_slot(key)
         i := hash(key) modulo num_slots
@@ -618,7 +623,7 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_SymbolId key) {
         blok_KeyValue kv = table->items[i];
         if(kv.key == key) {
             return &table->items[i];
-        } else if(kv.key == BLOK_SYMBOLID_NIL) {
+        } else if(blok_symbol_empty(kv.key)) {
             return &table->items[i];
         } else {
             ++i;
@@ -628,22 +633,22 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_SymbolId key) {
     return NULL;
 }
 
-bool blok_table_contains_key(blok_Table * table, blok_SymbolId key) {
+bool blok_table_contains_key(blok_Table * table, blok_Symbol key) {
     return blok_table_find_slot(table, key) == NULL;
 }
 
-blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok_SymbolId key) {
+blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok_Symbol key) {
     blok_KeyValue * kv = blok_table_find_slot(table, key);
     if(kv == NULL) {
         return blok_make_nil();
-    } else if(kv->key == BLOK_SYMBOLID_NIL) {
+    } else if(blok_symbol_empty(kv->key)) {
         return blok_make_nil();
     } else {
         return blok_obj_copy(destination_scope, kv->value);
     }
 }
 
-blok_Obj blok_table_set(blok_Table * table, blok_SymbolId key, blok_Obj value);
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value);
 
 void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     if(new_cap < table->count) {
@@ -652,14 +657,14 @@ void blok_table_rehash(blok_Table * table, uint64_t new_cap) {
     blok_Table new = blok_table_init_capacity(table->arena, new_cap);
     for(uint64_t i = 0; i < table->cap; ++i) {
         blok_KeyValue item = table->items[i];
-        if(item.key != BLOK_SYMBOLID_NIL) {
+        if(blok_symbol_empty(item.key)) {
             blok_table_set(&new, item.key, item.value);
         }
     }
     *table = new;
 }
 
-blok_Obj blok_table_set(blok_Table * table, blok_SymbolId key, blok_Obj value) {
+blok_Obj blok_table_set(blok_Table * table, blok_Symbol key, blok_Obj value) {
     /*
     function set(key, value)
         i := find_slot(key)
@@ -684,7 +689,7 @@ blok_Obj blok_table_set(blok_Table * table, blok_SymbolId key, blok_Obj value) {
     blok_KeyValue * kv = blok_table_find_slot(table, key);
     if (kv == NULL)
           blok_fatal_error(NULL, "table cannot find slot for key: %d", key);
-    if(kv->key != BLOK_SYMBOLID_NIL) {
+    if(!blok_symbol_empty(kv->key)) {
         assert(kv->key == key);
         //blok_obj_free(kv->value);
         kv->value = blok_obj_copy(table->arena, value);
@@ -697,7 +702,7 @@ blok_Obj blok_table_set(blok_Table * table, blok_SymbolId key, blok_Obj value) {
     }
 }
 
-blok_Obj blok_table_unset(blok_Table * table, blok_Symbol key) {
+blok_Obj blok_table_unset(blok_Table * table, blok_SymbolData key) {
     (void) table;
     (void) key;
     /*
@@ -918,9 +923,9 @@ typedef enum {
 void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style);
 
 
-void blok_symbol_fprint(blok_State *s, FILE * fp, const blok_SymbolId symbol, blok_Style style) {
+void blok_symbol_fprint(blok_State *s, FILE * fp, const blok_Symbol symbol, blok_Style style) {
     (void) style;
-    blok_Symbol sym = blok_symbol_from_id(s, symbol);
+    blok_SymbolData sym = blok_symbol_get_data(s, symbol);
     fprintf(fp, "%s", sym.buf);
     for(const blok_Suffix * suffix = sym.suffix; *suffix != BLOK_SUFFIX_NIL; ++suffix) {
         switch(*suffix) {

@@ -20,7 +20,7 @@ blok_Obj blok_make_primitive(blok_Primitive data) {
 }
 
 /*
-blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_Symbol sym) {
+blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_SymbolData sym) {
     blok_Obj result = blok_table_get(destination_arena, &b->bindings, sym);
     if(result.tag == BLOK_TAG_NIL && b->parent != NULL) {
         result = blok_scope_lookup(destination_arena, b->parent, sym);
@@ -28,21 +28,21 @@ blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_
     return result;
 }
 
-bool blok_scope_symbol_bound(blok_Scope * b, blok_Symbol sym) {
+bool blok_scope_symbol_bound(blok_Scope * b, blok_SymbolData sym) {
     for(;b != NULL; b = b->parent) {
         if(blok_table_contains_key(&b->bindings, sym)) return true;
     }
     return false;
 }
 
-void blok_scope_bind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
+void blok_scope_bind(blok_Scope * b, blok_SymbolData sym, blok_Obj value) {
     if(blok_scope_symbol_bound(b, sym)) {
         blok_fatal_error(NULL, "Symbol already bound: %s", sym.buf);
     }
     blok_table_set(&b->bindings, sym, value);
 }
 
-void blok_scope_rebind(blok_Scope * b, blok_Symbol sym, blok_Obj value) {
+void blok_scope_rebind(blok_Scope * b, blok_SymbolData sym, blok_Obj value) {
     if(blok_scope_symbol_bound(b, sym)) {
         blok_fatal_error(NULL, "Symbol is unbound: %s", sym.buf);
     }
@@ -127,8 +127,8 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
                 blok_Arena tmp = {0};
                 //assert(blok_scope_lookup(&tmp, b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
                 blok_arena_free(&tmp);
-                blok_Symbol * sym = blok_symbol_from_obj(obj);
-                blok_Symbol direct = *sym;
+                blok_SymbolData * sym = blok_symbol_from_obj(obj);
+                blok_SymbolData direct = *sym;
                 blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
                 if(value.tag == BLOK_TAG_NIL) {
                     blok_fatal_error(&obj.src_info, "Tried to evaluate undefined symbol '%s'", sym->buf);
@@ -160,8 +160,8 @@ void blok_primitive_procedure(blok_State * s, blok_Table * globals, blok_List * 
     (void) output;
 }
 
-bool blok_symbol_is_varname(blok_State * s, blok_SymbolId symbol) {
-    blok_Symbol sym = blok_symbol_from_id(s, symbol);
+bool blok_symbol_is_varname(blok_State * s, blok_Symbol symbol) {
+    blok_SymbolData sym = blok_symbol_get_data(s, symbol);
     const char * ch = sym.buf;
     if(!isalpha(*ch) && !islower(*ch) && *ch != '_') {
         return false;   
@@ -193,13 +193,13 @@ void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj 
     if(name_obj.tag != BLOK_TAG_SYMBOL) {
         blok_fatal_error(&name_obj.src_info, "Expected symbol inside #let form, found %s", blok_tag_get_name(name_obj.tag));
     }
-    blok_SymbolId name = blok_symbol_from_obj(name_obj);
+    blok_Symbol name = blok_symbol_from_obj(name_obj);
     if(!blok_symbol_is_varname(s, name)) {
-        blok_Symbol namesym = blok_symbol_from_id(s, name);
+        blok_SymbolData namesym = blok_symbol_get_data(s, name);
         blok_fatal_error(&name_obj.src_info, "Invalid variable name provided inside #let form: %s", namesym.buf);
     }
     if(blok_table_contains_key(globals, name)) {
-        blok_Symbol namesym = blok_symbol_from_id(s, name);
+        blok_SymbolData namesym = blok_symbol_get_data(s, name);
         blok_fatal_error(&name_obj.src_info, "Multiply defined symbol: %s", namesym.buf); 
     }
     blok_Obj expr = sexpr->items[2];
@@ -231,13 +231,13 @@ blok_Table * blok_primitive_toplevel(blok_State * s, blok_Arena * a, blok_List *
                     "with a list, found a %s",
                     blok_tag_get_name(head.tag));
         }
-        blok_SymbolId sym = blok_symbol_from_obj(head);
+        blok_Symbol sym = blok_symbol_from_obj(head);
         if(blok_symbol_streql(s, sym, "#let")) {
             blok_primitive_toplevel_let(s, globals, item);
         } else if(blok_symbol_streql(s, sym, "#procedure")) {
             blok_primitive_procedure(s, globals, list, output); //TODO create output file
         } else {
-            blok_Symbol symbol = blok_symbol_from_id(s, sym);
+            blok_SymbolData symbol = blok_symbol_get_data(s, sym);
             blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", symbol.buf);
         }
     }
@@ -263,8 +263,8 @@ void blok_compiler_compile(blok_Scope * b, blok_Obj obj, FILE * output) {
                 blok_Arena tmp = {0};
                 assert(blok_scope_lookup(&tmp, b, blok_symbol_from_char_ptr("print")).as.data == BLOK_PRIMITIVE_PRINT);
                 blok_arena_free(&tmp);
-                blok_Symbol * sym = blok_symbol_from_obj(obj);
-                blok_Symbol direct = *sym;
+                blok_SymbolData * sym = blok_symbol_from_obj(obj);
+                blok_SymbolData direct = *sym;
                 blok_Obj value = blok_scope_lookup(&b->arena, b, direct);
                 if(value.tag == BLOK_TAG_NIL) {
                     blok_fatal_error(&obj.src_info, "Tried to evaluate undefined symbol '%s'", sym->buf);

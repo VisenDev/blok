@@ -1,7 +1,7 @@
 (#let count 10)
 
 (#procedure Int factorial (Int num)
-    (when (#expr num <= 1)
+    (#when (#expr num <= 1)
         (return 1)
         )
     (return (factorial (sub num 1)))
