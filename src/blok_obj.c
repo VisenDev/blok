@@ -254,20 +254,20 @@ typedef struct {
 blok_SymbolData blok_symbol_get_data(const blok_State * s, blok_Symbol id) {
     assert(id != 0 && "0 is the NULL symbol");
     assert(id > 0);
-    assert(id <= s->symbols.len);
-    return s->symbols.items[id - 1];
+    assert(id <= s->symbols.items.len);
+    return blok_slice_get(s->symbols.items, id - 1);
 }
 
 bool blok_symboldata_equal(blok_SymbolData lhs, blok_SymbolData rhs);
 
 blok_Symbol blok_symboldata_intern(blok_State * s, blok_SymbolData sym) {
-    for(blok_Symbol i = 0; i < s->symbols.len; ++i) {
-        if(blok_symboldata_equal(sym, s->symbols.items[i])) {
+    for(blok_Symbol i = 0; i < s->symbols.items.len; ++i) {
+        if(blok_symboldata_equal(sym, blok_slice_get(s->symbols.items, i))) {
             return i + 1;
         }
     }
     blok_vec_append(&s->symbols, &s->persistent_arena, sym);
-    return s->symbols.len;
+    return s->symbols.items.len;
 }
 
 blok_Symbol blok_symbol_intern_str(blok_State * s, const char * symbol) {
@@ -281,8 +281,8 @@ blok_Symbol blok_symbol_intern_str(blok_State * s, const char * symbol) {
 
 blok_Type blok_type_from_id(const blok_State * s, blok_TypeId id) {
     assert(id >= 0);
-    assert(id < s->types.len);
-    return s->types.items[id];
+    assert(id < s->types.items.len);
+    return blok_slice_get(s->types.items, id);
 }
 
 /*

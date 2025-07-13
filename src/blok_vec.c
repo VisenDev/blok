@@ -4,22 +4,66 @@
 #include "blok_arena.c"
 #include <stdint.h>
 
-#define blok_Vec(Type) struct { Type * items; int32_t len; int32_t cap; }
+#define blok_Slice(Type)         \
+    struct {                     \
+        Type * ptr;              \
+        int32_t len;             \
+    }
 
-#define blok_vec_item_sizeof(vec_ptr) (sizeof((vec_ptr)->items[0]))
-#define blok_vec_new_cap(vec_ptr) ((vec_ptr)->cap * 2 + 1)
-#define blok_vec_cap_in_bytes(vec_ptr) (blok_vec_item_sizeof(vec_ptr) * (vec_ptr)->cap)
+#define blok_slice_from_array(array)  \
+    {array, sizeof(array) / sizeof(array[0])}
+
+#define blok_slice_range(slice, start, end) { \
+    (slice).ptr + (start), (                  \
+        assert((start) >= 0),                   \
+        assert((end + 1) <= (slice).len), \
+        ((end + 1) - (start)) \
+    ) \
+} 
+
+//#define blok_slice_foreach(Type, iterator, slice) \
+    //for(Type * iterator = (slice).ptr; iterator < (slice).ptr + (slice).len; ++iterator)
+
+#define blok_slice_get(slice, i) (slice).ptr[(i)]
+
+
+void blok_slice_run_tests(void) {
+    int buf[10] = {0};
+    blok_Slice(int) slice = blok_slice_from_array(buf);
+    for(int i = 0; i < slice.len; ++i) {
+        blok_slice_get(slice, i) = i;
+        printf("%d", blok_slice_get(slice, i));
+    }
+    printf("\n");
+    blok_Slice(int) subrange = blok_slice_range(slice, 5, 9);
+    for(int i = 0; i < subrange.len; ++i) {
+        printf("%d", blok_slice_get(subrange, i));
+    }
+    printf("\n");
+    (void)subrange;
+
+}
+
+#define blok_Vec(Type)           \
+    struct {                     \
+        blok_Slice(Type) items;  \
+        int32_t cap;             \
+        Type _item;              \
+    }
+
 
 #define blok_vec_append(vec_ptr, arena_ptr, item) do { \
     if((vec_ptr)->cap <= 0) { \
         (vec_ptr)->cap = 2;    \
-        (vec_ptr)->items = blok_arena_alloc(arena_ptr, blok_vec_cap_in_bytes(vec_ptr)); \
-    } else if((vec_ptr)->len + 1 > (vec_ptr)->cap) { \
-        (vec_ptr)->cap = blok_vec_new_cap(vec_ptr); \
-        (vec_ptr)->items = blok_arena_realloc(arena_ptr, (vec_ptr)->items, blok_vec_cap_in_bytes(vec_ptr)); \
+        (vec_ptr)->items.ptr = blok_arena_alloc(arena_ptr, (vec_ptr)->cap * sizeof((vec_ptr)->_item)); \
+    } else if((vec_ptr)->items.len + 1 > (vec_ptr)->cap) { \
+        (vec_ptr)->cap = (vec_ptr)->cap * 2 + 1; \
+        (vec_ptr)->items.ptr = blok_arena_realloc(arena_ptr, (vec_ptr)->items.ptr, (vec_ptr)->cap * sizeof(vec_ptr)->_item); \
     } \
-    (vec_ptr)->items[(vec_ptr)->len++] = item; \
+    (vec_ptr)->items.ptr[(vec_ptr)->items.len++] = item; \
 } while (0)
+
+#define blok_vec_get(vec_ptr, i) blok_slice_get((vec_ptr)->items, i)
 
 void blok_vec_run_tests(void) {
     blok_Vec(int) v = {0};
@@ -30,10 +74,10 @@ void blok_vec_run_tests(void) {
     blok_vec_append(&v, &a, 3);
     blok_vec_append(&v, &a, 4);
 
-    assert(v.items[0] == 1);
-    assert(v.items[1] == 2);
-    assert(v.items[2] == 3);
-    assert(v.items[3] == 4);
+    assert(v.items.ptr[0] == 1);
+    assert(v.items.ptr[1] == 2);
+    assert(v.items.ptr[2] == 3);
+    assert(v.items.ptr[3] == 4);
 
     blok_arena_free(&a);
 }
