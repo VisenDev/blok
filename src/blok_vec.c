@@ -67,22 +67,22 @@ void blok_slice_run_tests(void) {
     for(Type * iterator = (vec)->items.ptr; iterator < (vec)->items.ptr + (vec)->items.len; ++iterator)
 
 void blok_vec_run_tests(void) {
-    blok_profiler_start("vec_run_tests");
-    blok_Vec(int) v = {0};
-    blok_Arena a = {0};
+    blok_profiler_do("vec_run_tests") {
+        blok_Vec(int) v = {0};
+        blok_Arena a = {0};
 
-    blok_vec_append(&v, &a, 1);
-    blok_vec_append(&v, &a, 2);
-    blok_vec_append(&v, &a, 3);
-    blok_vec_append(&v, &a, 4);
+        blok_vec_append(&v, &a, 1);
+        blok_vec_append(&v, &a, 2);
+        blok_vec_append(&v, &a, 3);
+        blok_vec_append(&v, &a, 4);
 
-    assert(v.items.ptr[0] == 1);
-    assert(v.items.ptr[1] == 2);
-    assert(v.items.ptr[2] == 3);
-    assert(v.items.ptr[3] == 4);
+        assert(v.items.ptr[0] == 1);
+        assert(v.items.ptr[1] == 2);
+        assert(v.items.ptr[2] == 3);
+        assert(v.items.ptr[3] == 4);
 
-    blok_arena_free(&a);
-    blok_profiler_stop("vec_run_tests");
+        blok_arena_free(&a);
+    }
 }
 
 

@@ -51,9 +51,14 @@ bool blok_profiler_log(const char * name, bool begin, uint64_t ts, const char * 
     return begin;
 }
 
+
+#define BLOK_CONCAT_(a, b) a##b
+#define BLOK_CONCAT(a, b) BLOK_CONCAT_(a, b)
+
 #define blok_profiler_start(name) blok_profiler_log(name, true, blok_profiler_timestamp(), __FILE__, __LINE__)
 #define blok_profiler_stop(name) blok_profiler_log(name, false, blok_profiler_timestamp(), __FILE__, __LINE__)
-#define blok_profiler_do(name) for(bool _i = blok_profiler_start(name); _i; _i = blok_profiler_stop(name)) 
+#define blok_profiler_do_internal(name, unique) for(bool unique = blok_profiler_start(name); unique; unique = blok_profiler_stop(name)) 
+#define blok_profiler_do(name) blok_profiler_do_internal(name, BLOK_CONCAT(_i, __LINE__))
 
 #endif /*BLOK_PROFILER_DISABLE*/
 
