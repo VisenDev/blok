@@ -85,6 +85,9 @@ void blok_vec_run_tests(void) {
     }
 }
 
+#define blok_Optional(Type) struct { bool valid; Type value; }
+
+#define blok_optional_nil(Type) (blok_Optional(Type) {false}
 
 
 #endif /*BLOK_VEC_C*/
