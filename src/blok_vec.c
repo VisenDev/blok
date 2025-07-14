@@ -62,9 +62,30 @@ void blok_slice_run_tests(void) {
 
 #define blok_vec_get(vec_ptr, i) blok_slice_get((vec_ptr)->items, i)
 
+#define blok_vec_end(vec) ((vec)->items.ptr + (vec)->items.len)
 
 #define blok_vec_foreach(Type, iterator, vec) \
     for(Type * iterator = (vec)->items.ptr; iterator < (vec)->items.ptr + (vec)->items.len; ++iterator)
+
+#define blok_vec_find(Type, iterator, vec, value) \
+    Type * iterator = (vec)->items.ptr; \
+    for(;iterator < blok_vec_end(vec); ++iterator) { \
+        if(*iterator == value) break;  \
+    } \
+    if(iterator >= (blok_vec_end(vec))) iterator = NULL;
+
+
+//    do { \
+//        bool _found = false; \
+//        for(result = (vec)->items.ptr; result < (vec)->items.ptr + (vec)->items.len; ++result) { \
+//            if(expr) { \
+//                _found = true; \
+//                break; \
+//            } \
+//        } \
+//        if(_found == false) result = NULL; \
+//    } while (0)
+
 
 void blok_vec_run_tests(void) {
     blok_profiler_do("vec_run_tests") {
@@ -80,6 +101,11 @@ void blok_vec_run_tests(void) {
         assert(v.items.ptr[1] == 2);
         assert(v.items.ptr[2] == 3);
         assert(v.items.ptr[3] == 4);
+
+        blok_vec_find(int, it, &v, 1);
+        if(it != NULL) {
+            printf("vec contains 1!");
+        }
 
         blok_arena_free(&a);
     }

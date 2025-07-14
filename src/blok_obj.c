@@ -202,18 +202,25 @@ typedef struct {
 } blok_Function;
 
 typedef struct {
+    blok_Symbol name;
     blok_TypeData type;
     blok_Obj value;
 } blok_Binding;
+
+typedef blok_Vec(blok_KeyValue) blok_AList;
+typedef blok_Vec(blok_Binding) blok_Bindings;
 
 typedef struct {
     blok_Arena persistent_arena;
     blok_Vec(blok_TypeData) types; 
     blok_Vec(blok_SymbolData) symbols;
     blok_Vec(blok_Arena) arenas;
+
+    blok_Bindings toplevel_builtins;
+    blok_Bindings local_builtins;
+    blok_Bindings globals;
 } blok_State;
 
-typedef blok_Vec(blok_KeyValue) blok_AList;
 typedef blok_Optional(blok_Obj) blok_OptionalObj;
 
 blok_OptionalObj blok_alist_find(const blok_AList * list, blok_Symbol sym) {
