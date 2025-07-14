@@ -53,7 +53,7 @@ void blok_slice_run_tests(void) {
 
 
 #define blok_vec_append(vec_ptr, arena_ptr, item) do { \
-    blok_profile(blok_vec_append) { \
+    blok_profiler_do("blok_vec_append") { \
         if((vec_ptr)->cap <= 0) { \
             (vec_ptr)->cap = 2;    \
             (vec_ptr)->items.ptr = blok_arena_alloc(arena_ptr, (vec_ptr)->cap * sizeof((vec_ptr)->_item)); \

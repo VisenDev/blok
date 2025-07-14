@@ -119,7 +119,7 @@ void blok_arena_reset(blok_Arena * a) {
 }
 
 void blok_arena_free(blok_Arena * a) {
-    blok_profile(arena_free) {
+    blok_profiler_do("arena_free") {
         for(size_t i = 0; i < a->len; ++i) {
             free(a->allocations[i].ptr);
         }

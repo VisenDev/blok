@@ -38,7 +38,7 @@ char blok_reader_peek(blok_Reader * r) {
 }
 
 void blok_reader_skip_whitespace(blok_Reader * r) {
-    blok_profile(reader_skip_whitespace) {
+    blok_profiler_do("blok_reader_skip_whitespace") {
         if(blok_reader_eof(r)) {
             blok_profiler_stop("reader_skip_whitespace");
             return;

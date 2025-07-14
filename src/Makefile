@@ -4,7 +4,7 @@ MAX_ERRORS_CLANG= -ferror-limit=${ERRORS}
 SRC= *.c
 STD= c99
 DEBUG_FLAGS= -O0 -g -fsanitize=address,undefined
-RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math #-DBLOK_PROFILER_DISABLE
+RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math -DBLOK_PROFILER_DISABLE
 WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror
 
 main: $(SRC) Makefile 
