@@ -93,6 +93,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * a, blok_Reader * r) {
                     state = BLOK_READER_STATE_ESCAPE;
                 } else if (ch == '"') {
                     blok_reader_skip_char(r, '"');
+                    blok_vec_append(str, a, 0);
                     blok_Obj result =  blok_obj_from_string(str);
                     result.src_info = r->src_info;
                     blok_profiler_stop("reader_parse_int");
