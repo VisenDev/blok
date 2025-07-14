@@ -79,11 +79,11 @@ blok_Obj blok_reader_parse_int(blok_Reader * r) {
 #define BLOK_READER_STATE_BASE 0
 #define BLOK_READER_STATE_ESCAPE 1
 
-blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
+blok_Obj blok_reader_parse_string(blok_Arena * a, blok_Reader * r) {
     blok_profiler_start("reader_parse_string");
     blok_reader_skip_char(r, '"');
     int state = BLOK_READER_STATE_BASE;
-    blok_String * str = blok_string_allocate(b, 8);
+    blok_String * str = blok_arena_alloc(a, sizeof(blok_String));
     while(1) {
         char ch = blok_reader_peek(r);
         if(blok_reader_eof(r)) blok_fatal_error(&r->src_info, "Unexpected end of file when parsing string");
@@ -98,7 +98,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                     blok_profiler_stop("reader_parse_int");
                     return result;
                 } else {
-                    blok_string_append(str, blok_reader_getc(r));
+                    blok_vec_append(str, a, blok_reader_getc(r));
                 }
                 break;
             case BLOK_READER_STATE_ESCAPE:
@@ -106,16 +106,16 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                 char escape = blok_reader_getc(r);
                 switch(escape) {
                     case 'n':
-                        blok_string_append(str, '\n');
+                        blok_vec_append(str, a, '\n');
                         break;
                     case 't':
-                        blok_string_append(str, '\t');
+                        blok_vec_append(str, a, '\t');
                         break;
                     case '"':
-                        blok_string_append(str, '"');
+                        blok_vec_append(str, a, '"');
                         break;
                     case '\'':
-                        blok_string_append(str, '\'');
+                        blok_vec_append(str, a, '\'');
                         break;
                     default:
                         blok_fatal_error(&r->src_info, "Unknown string escape: \"\\%c\"", escape);
@@ -216,7 +216,7 @@ blok_Obj blok_reader_parse_list(blok_State * s, blok_Arena * a, blok_Reader * r)
             sublists[sublist_count++] = blok_list_allocate(a, 4);
 
             while(blok_reader_peek(r) != ')' && blok_reader_peek(r) != ',' && !blok_reader_eof(r)) {
-                blok_list_append(sublists[sublist_count - 1], blok_reader_parse_obj(s, a, r));
+                blok_list_append(sublists[sublist_count - 1], a, blok_reader_parse_obj(s, a, r));
                 blok_reader_skip_whitespace(r);
             }
 
@@ -229,7 +229,7 @@ blok_Obj blok_reader_parse_list(blok_State * s, blok_Arena * a, blok_Reader * r)
         } else {
             result = blok_list_allocate(a, sublist_count);
             for(int i = 0; i < sublist_count; ++i) {
-                blok_list_append(result, blok_obj_from_list(sublists[i]));
+                blok_list_append(result, a, blok_obj_from_list(sublists[i]));
             }
         }
 
@@ -283,7 +283,7 @@ blok_Obj blok_reader_read_file(blok_State * s, blok_Arena * a, char const * path
     //blok_list_append(result, blok_make_symbol(a, "toplevel"));
     blok_reader_skip_whitespace(&r);
     while(!blok_reader_eof(&r) && blok_reader_peek(&r) != ')') {
-        blok_list_append(result, blok_reader_parse_obj(s, a, &r));
+        blok_list_append(result, &s->persistent_arena, blok_reader_parse_obj(s, a, &r));
         blok_reader_skip_whitespace(&r);
     }
     fclose(r.fp);

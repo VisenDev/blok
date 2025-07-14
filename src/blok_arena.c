@@ -88,6 +88,12 @@ void * blok_arena_alloc(blok_Arena * a, size_t bytes) {
     return new.ptr;
 }
 
+void * blok_arena_memdup(blok_Arena * a, void * ptr, size_t bytes) {
+    char * mem = blok_arena_alloc(a, bytes);
+    memcpy(mem, ptr, bytes);
+    return mem;
+}
+
 void * blok_arena_realloc(blok_Arena * a, void * ptr, size_t bytes) {
     for(size_t i = 0; i < a->len; ++i) {
         blok_Allocation * allocation = &a->allocations[i];
@@ -130,6 +136,7 @@ void blok_arena_free(blok_Arena * a) {
 }
 
 void blok_arena_run_tests(void) {
+    blok_profiler_start("arena_run_tests");
     blok_Arena a = {0};
     {
         char * mem = blok_arena_alloc(&a, 16);
@@ -161,6 +168,7 @@ void blok_arena_run_tests(void) {
         }
     }
     blok_arena_free(&a);
+    blok_profiler_stop("arena_run_tests");
 }
 
 #endif /*ARENA_C*/

@@ -29,5 +29,6 @@ clean:
 	if [ -e *.i ]; then trash *.i; fi
 	if [ -e *.s ]; then trash *.s; fi
 	if [ -e profile.json ]; then trash profile.json; fi
+	if [ -e a.out ]; then trash a.out; fi
 
 .PHONY clean run run_release:

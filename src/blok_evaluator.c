@@ -183,13 +183,13 @@ blok_Type blok_expr_infer_type(blok_Arena * a, blok_Obj expr) {
 
 void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj sexpr_obj) {
     blok_List * sexpr = blok_list_from_obj(sexpr_obj);
-    if(sexpr->len != 3) {
+    if(sexpr->items.len != 3) {
         blok_fatal_error(&sexpr_obj.src_info, "Invalid #let form, expected (#let <name> <value>)");
     }
-    blok_Obj let = sexpr->items[0];
+    blok_Obj let = sexpr->items.ptr[0];
     assert(let.tag == BLOK_TAG_SYMBOL);
     assert(blok_symbol_streql(s, blok_symbol_from_obj(let), "#let"));
-    blok_Obj name_obj = sexpr->items[1];
+    blok_Obj name_obj = sexpr->items.ptr[1];
     if(name_obj.tag != BLOK_TAG_SYMBOL) {
         blok_fatal_error(&name_obj.src_info, "Expected symbol inside #let form, found %s", blok_tag_get_name(name_obj.tag));
     }
@@ -202,7 +202,7 @@ void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj 
         blok_SymbolData namesym = blok_symbol_get_data(s, name);
         blok_fatal_error(&name_obj.src_info, "Multiply defined symbol: %s", namesym.buf); 
     }
-    blok_Obj expr = sexpr->items[2];
+    blok_Obj expr = sexpr->items.ptr[2];
     blok_Type type = blok_expr_infer_type(globals->arena, expr);
     (void) type;
     (void) let;
@@ -212,8 +212,8 @@ void blok_primitive_toplevel_let(blok_State * s, blok_Table * globals, blok_Obj 
 //returns a table of globals
 blok_Table * blok_primitive_toplevel(blok_State * s, blok_Arena * a, blok_List * sexpr, FILE * output) {
     blok_Table * globals = blok_table_allocate(a, 16);
-    for(int32_t i = 0; i < sexpr->len; ++i) {
-        blok_Obj item = sexpr->items[i];
+    for(int32_t i = 0; i < sexpr->items.len; ++i) {
+        blok_Obj item = sexpr->items.ptr[i];
         if(item.tag != BLOK_TAG_LIST) {
             blok_fatal_error(
                     &item.src_info,
@@ -221,10 +221,10 @@ blok_Table * blok_primitive_toplevel(blok_State * s, blok_Arena * a, blok_List *
                     blok_tag_get_name(item.tag));
         }
         blok_List * list = blok_list_from_obj(item);
-        if(list->len <= 0) {
+        if(list->items.len <= 0) {
             blok_fatal_error(&item.src_info, "Empty toplevel list");
         }
-        blok_Obj head = list->items[0];
+        blok_Obj head = list->items.ptr[0];
         if(head.tag != BLOK_TAG_SYMBOL) {
             blok_fatal_error(&head.src_info,
                     "Invalid toplevel form, s-expressions should start "

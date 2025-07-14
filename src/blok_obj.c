@@ -79,8 +79,7 @@ typedef enum {
 typedef int32_t blok_Symbol;
 #define BLOK_SYMBOL_NIL 0 
 
-typedef int32_t blok_TypeId;
-#define BLOK_TYPEID_NIL 0
+typedef int32_t blok_Type;
 
 typedef enum {
     /*ANYTYPE*/
@@ -101,12 +100,12 @@ typedef enum {
 } blok_TypeTag;
 
 typedef struct {
-    blok_TypeId item_type;
+    blok_Type item_type;
 } blok_ListType;
 
 typedef struct {
     blok_Symbol name;
-    blok_TypeId type;
+    blok_Type type;
 } blok_FieldType;
 
 typedef struct {
@@ -122,10 +121,10 @@ typedef struct {
 } blok_UnionType;
 
 typedef struct {
-    blok_TypeId type;
+    blok_Type type;
 } blok_OptionalType;
 
-typedef struct blok_Type {
+typedef struct blok_TypeData {
     blok_TypeTag tag; 
     union {
         blok_ListType list;
@@ -133,7 +132,7 @@ typedef struct blok_Type {
         blok_StructType struct_;
         blok_OptionalType optional;
     } as;
-} blok_Type;
+} blok_TypeData;
 
 
 const char * blok_tag_get_name(blok_Tag tag) {
@@ -150,7 +149,7 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_FUNCTION:  return "BLOK_TAG_FUNCTION";
         case BLOK_TAG_BOOL:      return "BLOK_TAG_BOOL";
         case BLOK_TAG_TYPE:      return "BLOK_TAG_TYPE";
-        case BLOK_TAG_VARIABLE:   return "BLOK_TAG_VARIABLE";
+        case BLOK_TAG_VARIABLE:  return "BLOK_TAG_VARIABLE";
     }
 }
 
@@ -166,19 +165,24 @@ typedef struct {
     blok_SourceInfo src_info;
 } blok_Obj;
 
-typedef struct { 
-    int32_t len;
-    int32_t cap;
-    blok_Obj * items;
-    blok_Arena * arena; /*the scope in which new items are allocated*/
-} blok_List;
 
-typedef struct {
-    size_t len;
-    size_t cap;
-    char * ptr;
-    blok_Arena * arena;
-} blok_String;
+typedef blok_Vec(blok_Obj) blok_List;
+typedef blok_Vec(char) blok_String;
+
+//
+//typedef struct { 
+//    int32_t len;
+//    int32_t cap;
+//    blok_Obj * items;
+//    blok_Arena * arena; /*the scope in which new items are allocated*/
+//} blok_List;
+//
+//typedef struct {
+//    size_t len;
+//    size_t cap;
+//    char * ptr;
+//    blok_Arena * arena;
+//} blok_String;
 
 typedef enum {
     BLOK_SUFFIX_NIL = '\0',
@@ -215,14 +219,14 @@ typedef struct blok_FunctionSignature {
 } blok_FunctionSignature;
 
 typedef struct {
-    blok_Arena * arena;
+    //blok_Arena * arena;
     blok_FunctionSignature signature;
     blok_List * params;
     blok_List * body;
 } blok_Function;
 
 typedef struct {
-    blok_Type type;
+    blok_TypeData type;
     blok_Obj value;
 } blok_Binding;
 
@@ -247,7 +251,7 @@ typedef struct blok_LocalScope {
 
 typedef struct {
     blok_Arena persistent_arena;
-    blok_Vec(blok_Type) types; 
+    blok_Vec(blok_TypeData) types; 
     blok_Vec(blok_SymbolData) symbols;
     blok_Vec(blok_Arena) arenas;
 } blok_State;
@@ -280,7 +284,7 @@ blok_Symbol blok_symbol_intern_str(blok_State * s, const char * symbol) {
 
 
 
-blok_Type blok_type_from_id(const blok_State * s, blok_TypeId id) {
+blok_TypeData blok_type_from_id(const blok_State * s, blok_Type id) {
     assert(id >= 0);
     assert(id < s->types.items.len);
     return blok_slice_get(s->types.items, id);
@@ -288,10 +292,10 @@ blok_Type blok_type_from_id(const blok_State * s, blok_TypeId id) {
 
 /*
  * TODO: uncomment this
-bool blok_type_equal(blok_Type lhs, blok_Type rhs);
+bool blok_type_equal(blok_TypeData lhs, blok_TypeData rhs);
 
-blok_TypeId blok_type_intern(blok_State * s, blok_Type sym) {
-    for(blok_TypeId i = 0; i < s->types.len; ++i) {
+blok_Type blok_type_intern(blok_State * s, blok_TypeData sym) {
+    for(blok_Type i = 0; i < s->types.len; ++i) {
         if(blok_type_equal(sym, s->types.items[i])) {
             return i;
         }
@@ -385,17 +389,17 @@ blok_List * blok_list_allocate(blok_Arena * a, int32_t initial_capacity) {
     assert(a != NULL);
     blok_List * result = blok_arena_alloc(a, sizeof(blok_List));
     assert(result != NULL);
-    result->len = 0;
     result->cap = initial_capacity;
-    result->arena = a;
-    result->items = blok_arena_alloc(a, result->cap * sizeof(blok_Obj));
-    assert(result->items != NULL);
+    result->items.len = 0;
+    result->items.ptr = blok_arena_alloc(a, result->cap * sizeof(blok_Obj));
+    assert(result->items.ptr != NULL);
     blok_profiler_stop("blok_list_allocate");
     return result;
 }
 
 blok_KeyValue * blok_keyvalue_allocate(blok_Arena * a) {
     blok_KeyValue * result = blok_arena_alloc(a, sizeof(blok_KeyValue));
+    memset(result, 0, sizeof(blok_KeyValue));
     //result->arena = a;
     //assert(result->arena != NULL);
     return result;
@@ -409,26 +413,26 @@ blok_Obj blok_keyvalue_get(blok_Arena * destination_arena, blok_KeyValue * kv) {
 }
 */
 
-blok_String * blok_string_allocate(blok_Arena * b, uint64_t capacity) {
-    blok_String * blok_str = blok_arena_alloc(b, sizeof(blok_String));
-    assert(((uintptr_t)blok_str & 0xf) == 0);
-
-    blok_str->len = 0;
-    blok_str->cap = 2 * capacity + 1;
-    blok_str->ptr = blok_arena_alloc(b, blok_str->cap);
-    blok_str->arena = b;
-    memset(blok_str->ptr, 0, capacity);
-    return blok_str;
-}
-
-blok_Obj blok_make_string(blok_Arena * b, const char * str) {
-    const int32_t len = strlen(str);
-    blok_String * result = blok_string_allocate(b, len);
-    strcpy(result->ptr, str);
-    result->len = len;
-    return blok_obj_from_ptr(result, BLOK_TAG_STRING);
-}
-
+//blok_String * blok_string_allocate(blok_Arena * b, uint64_t capacity) {
+//    blok_String * blok_str = blok_arena_alloc(b, sizeof(blok_String));
+//    assert(((uintptr_t)blok_str & 0xf) == 0);
+//
+//    blok_str->len = 0;
+//    blok_str->cap = 2 * capacity + 1;
+//    blok_str->ptr = blok_arena_alloc(b, blok_str->cap);
+//    blok_str->arena = b;
+//    memset(blok_str->ptr, 0, capacity);
+//    return blok_str;
+//}
+//
+//blok_Obj blok_make_string(blok_Arena * b, const char * str) {
+//    const int32_t len = strlen(str);
+//    blok_String * result = blok_string_allocate(b, len);
+//    strcpy(result->ptr, str);
+//    result->len = len;
+//    return blok_obj_from_ptr(result, BLOK_TAG_STRING);
+//}
+//
 blok_Obj blok_make_symbol(blok_Symbol sym) {
     blok_Obj result = {0};
     result.as.data = sym;
@@ -474,10 +478,10 @@ blok_Table * blok_table_from_obj(blok_Obj obj) {
 }
 
 bool blok_string_equal(blok_String * const lhs, blok_String * const rhs) {
-    if(lhs->len != rhs->len) {
+    if(lhs->items.len != rhs->items.len) {
         return false;
     } else {
-        return strncmp(lhs->ptr, rhs->ptr, lhs->len);
+        return strncmp(lhs->items.ptr, rhs->items.ptr, lhs->items.len);
     }
 }
 
@@ -530,24 +534,25 @@ bool blok_nil_equal(blok_Obj obj) {
 //bool blok_symbol_empty(const blok_State * s, blok_Symbol sym) {
 //}
 
-void blok_list_append(blok_List* l, blok_Obj item) {
+void blok_list_append(blok_List* l, blok_Arena * a,  blok_Obj item) {
     blok_profiler_start("blok_list_append");
-    if(l->len + 1 >= l->cap) {
-        l->cap = l->cap * 2 + 1;
-        l->items = blok_arena_realloc(l->arena, l->items, l->cap * sizeof(blok_Obj));
-    }
-    l->items[l->len++] = blok_obj_copy(l->arena, item);
+    blok_vec_append(l, a, blok_obj_copy(a, item));
+    //if(l->len + 1 >= l->cap) {
+    //    l->cap = l->cap * 2 + 1;
+    //    l->items = blok_arena_realloc(l->arena, l->items, l->cap * sizeof(blok_Obj));
+    //}
+    //l->items[l->len++] = blok_obj_copy(l->arena, item);
     blok_profiler_stop("blok_list_append");
 }
 
-void blok_string_append(blok_String * l, char ch) {
-    if(l->len + 2 >= l->cap) {
-        l->cap = (l->cap + 2) * 2;
-        l->ptr = blok_arena_realloc(l->arena, l->ptr, l->cap);
-    }
-    l->ptr[l->len++] = ch;
-    l->ptr[l->len] = 0;
-}
+//void blok_string_append(blok_String * l, char ch) {
+//    if(l->len + 2 >= l->cap) {
+//        l->cap = (l->cap + 2) * 2;
+//        l->ptr = blok_arena_realloc(l->arena, l->ptr, l->cap);
+//    }
+//    l->ptr[l->len++] = ch;
+//    l->ptr[l->len] = 0;
+//}
 
 //uint64_t blok_hash_char_ptr(char * const ptr, uint64_t len) {
 //    /* Inspired by djbt2 by Dan Bernstein - http://www.cse.yorku.ca/~oz/hash.html */
@@ -784,56 +789,60 @@ void blok_table_empty(blok_Arena * b, blok_Table * table) {
 */
 
 void blok_table_run_tests(void) {
-    blok_Arena a = {0};
-    blok_State s = {0};
-    blok_Table table = blok_table_init_capacity(&a, 16);
-    assert(table.cap == 16);
-    assert(table.count == 0);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
+    blok_profiler_do("table_run_tests") {
+        blok_Arena a = {0};
+        blok_State s = {0};
+        blok_Table table = blok_table_init_capacity(&a, 16);
+        assert(table.cap == 16);
+        assert(table.count == 0);
+        assert(table.iterate_i == 0);
+        assert(table.items != NULL);
 
-    blok_table_set(&table, blok_symbol_intern_str(&s, "hello"), blok_make_int(10));
-    assert(table.cap == 16);
-    BLOK_LOG("table.count: %d\n", table.count);
-    assert(table.count == 1);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
+        blok_table_set(&table, blok_symbol_intern_str(&s, "hello"), blok_make_int(10));
+        assert(table.cap == 16);
+        BLOK_LOG("table.count: %d\n", table.count);
+        assert(table.count == 1);
+        assert(table.iterate_i == 0);
+        assert(table.items != NULL);
 
-    blok_Obj value =
-        blok_table_get(&a, &table, blok_symbol_intern_str(&s, "hello"));
-    assert(value.tag != BLOK_TAG_NIL);
-    assert(value.as.data == 10);
-    assert(table.cap == 16);
-    assert(table.count == 1);
-    assert(table.iterate_i == 0);
-    assert(table.items != NULL);
-    (void) value;
+        blok_Obj value =
+            blok_table_get(&a, &table, blok_symbol_intern_str(&s, "hello"));
+        assert(value.tag != BLOK_TAG_NIL);
+        assert(value.as.data == 10);
+        assert(table.cap == 16);
+        assert(table.count == 1);
+        assert(table.iterate_i == 0);
+        assert(table.items != NULL);
+        (void) value;
 
-    blok_arena_free(&a);
+        blok_arena_free(&a);
+    }
 }
 
 blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj);
 
-blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * const list) {
+blok_List * blok_list_copy(blok_Arena * a, blok_List const * const list) {
     blok_profiler_start("blok_list_copy");
-    blok_List * result = blok_list_allocate(destination_scope, list->len);
-    for(int32_t i = 0; i < list->len; ++i) {
-        blok_list_append(result, list->items[i]);
+    blok_List * result = blok_arena_alloc(a, sizeof(blok_List));
+    memset(result, 0, sizeof(blok_List));
+    blok_vec_foreach(blok_Obj, it, list) {
+        blok_list_append(result, a, *it);
     }
     blok_profiler_stop("blok_list_copy");
     return result;
 }
 
-blok_String * blok_string_copy(blok_Arena * destination_scope, blok_String * str) {
+blok_String * blok_string_copy(blok_Arena * a, blok_String * str) {
     blok_profiler_start("blok_string_copy");
-    size_t len = strlen(str->ptr);
-    if(str->len != len) {
-        printf("str->len: %zu, strlen(str->ptr): %zu", str->len, len);
+    //size_t len = strlen(str->ptr);
+    //if(str->len != len) {
+    //    printf("str->len: %zu, strlen(str->ptr): %zu", str->len, len);
+    //}
+    blok_String * result = blok_arena_alloc(a, sizeof(blok_String));
+    memset(result, 0, sizeof(blok_List));
+    blok_vec_foreach(char, ch, str) {
+        blok_vec_append(result, a, *ch);
     }
-    blok_String * result = blok_string_allocate(destination_scope, str->cap);
-
-    strcpy(result->ptr, str->ptr);
-    result->len = str->len;
     blok_profiler_stop("blok_string_copy");
     return result;
 }
@@ -999,10 +1008,11 @@ void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) 
             case BLOK_TAG_LIST:
                 {
                     blok_List * list = blok_list_from_obj(obj);
+                    bool whitespace = false;
                     fprintf(fp, "(");
-                    for(int i = 0; i < list->len; ++i) {
-                        if(i != 0) fprintf(fp, " ");
-                        blok_obj_fprint(s, fp, list->items[i], style);
+                    blok_vec_foreach(blok_Obj, it, list) {
+                        if(whitespace) fprintf(fp, " "); else whitespace = true;
+                        blok_obj_fprint(s, fp, *it, style);
                     }
                     fprintf(fp, ")");
                 }
@@ -1010,12 +1020,12 @@ void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) 
             case BLOK_TAG_STRING:
                 switch(style) {
                     case BLOK_STYLE_AESTHETIC:
-                        fprintf(fp, "%s", blok_string_from_obj(obj)->ptr);
+                        fprintf(fp, "%s", blok_string_from_obj(obj)->items.ptr);
                         break;
                     case BLOK_STYLE_CODE:
                         fprintf(fp, "\"");
                         blok_String * str = blok_string_from_obj(obj);
-                        blok_fprint_escape_sequences(fp, str->ptr, 32);
+                        blok_fprint_escape_sequences(fp, str->items.ptr, 32);
                         fprintf(fp, "\"");
                         break;
                 }

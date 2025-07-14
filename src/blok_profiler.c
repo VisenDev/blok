@@ -45,7 +45,7 @@ bool blok_profiler_log(const char * name, bool begin, uint64_t ts, const char * 
     }
     const char ph = begin ? 'B' : 'E';
     fprintf(blok_profiler_output_file,
-            "    { \"name\": \"%s\", \"ph\": \"%c\", \"ts\": %llu, \"tid\": 1, "
+            "    { \"name\": \"%s\", \"ph\": \"%c\", \"ts\": %lu, \"tid\": 1, "
             "\"pid\": 1, \"args\": { \"file\": \"%s\", \"line\": %d } }",
             name, ph, ts, file, line);
     return begin;
