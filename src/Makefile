@@ -5,7 +5,7 @@ SRC= *.c
 STD= c99
 DEBUG_FLAGS= -O0 -g -fsanitize=address,undefined
 RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math -DBLOK_PROFILER_DISABLE
-WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror
+WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror -Wimplicit-fallthrough -Wshadow
 
 main: $(SRC) Makefile 
 	clang main.c $(DEBUG_FLAGS) $(WARN_FLAGS) -std=$(STD) $(MAX_ERRORS_CLANG) -c

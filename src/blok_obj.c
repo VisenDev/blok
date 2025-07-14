@@ -505,13 +505,17 @@ bool blok_obj_equal(blok_Obj lhs, blok_Obj rhs) {
             case BLOK_TAG_INT:
             case BLOK_TAG_SYMBOL:
                 result = lhs.as.data == rhs.as.data;
+                break;
             case BLOK_TAG_NIL:
                 result = true;
+                break;
             case BLOK_TAG_STRING:
                 result = blok_string_equal(blok_string_from_obj(lhs),
                         blok_string_from_obj(rhs));
+                break;
             default: 
                 blok_fatal_error(NULL, "Comparison for this tag not implemented yet: %s", blok_tag_get_name(lhs.tag));
+                break;
         }
     }
     blok_profiler_stop("blok_obj_equal");
@@ -878,20 +882,28 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
         case BLOK_TAG_INT:
         case BLOK_TAG_SYMBOL:
             result = obj;
+            break;
         case BLOK_TAG_LIST:
             result = blok_obj_from_list(blok_list_copy(destination_scope, blok_list_from_obj(obj)));
+            break;
         case BLOK_TAG_STRING:
             result = blok_obj_from_string(blok_string_copy(destination_scope, blok_string_from_obj(obj)));
+            break;
         case BLOK_TAG_KEYVALUE:
             result = blok_obj_from_keyvalue(blok_keyvalue_copy(destination_scope, blok_keyvalue_from_obj(obj)));
+            break;
         case BLOK_TAG_TABLE:
             result =  blok_obj_from_table(blok_table_copy(destination_scope, blok_table_from_obj(obj)));
+            break;
         case BLOK_TAG_FUNCTION:
             result = blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
+            break;
         case BLOK_TAG_TYPE:
             blok_fatal_error(NULL, "TODO");
+            break;
         case BLOK_TAG_VARIABLE:
             blok_fatal_error(NULL, "TODO");
+            break;
     }
 
     result.src_info = obj.src_info;

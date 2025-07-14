@@ -48,8 +48,8 @@ bool blok_profiler_log(const char * name, bool begin, uint64_t ts) {
     return begin;
 }
 
-#define blok_profiler_start(name) blok_profiler_log(name, 'B', blok_profiler_timestamp())
-#define blok_profiler_stop(name) blok_profiler_log(name, 'E', blok_profiler_timestamp())
+#define blok_profiler_start(name) blok_profiler_log(name, true, blok_profiler_timestamp())
+#define blok_profiler_stop(name) blok_profiler_log(name, false, blok_profiler_timestamp())
 #define blok_profiler_do(name) for(bool _i = blok_profiler_start(name); _i; _i = blok_profiler_stop(name)) 
 
 #endif /*BLOK_PROFILER_DISABLE*/
