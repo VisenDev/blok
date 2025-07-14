@@ -34,7 +34,7 @@ void blok_profiler_deinit(void) {
     fclose(blok_profiler_output_file);
 }
 
-bool blok_profiler_log(const char * name, bool begin, uint64_t ts) {
+bool blok_profiler_log(const char * name, bool begin, uint64_t ts, const char * file, const int line) {
     static bool blok_profiler_prepend_comma = false;
 
     assert(blok_profiler_output_file != NULL);
@@ -44,12 +44,15 @@ bool blok_profiler_log(const char * name, bool begin, uint64_t ts) {
         blok_profiler_prepend_comma = true;
     }
     const char ph = begin ? 'B' : 'E';
-    fprintf( blok_profiler_output_file, "    { \"name\": \"%s\", \"ph\": \"%c\", \"ts\": %llu, \"tid\": 1, \"pid\": 1 }", name, ph, ts);
+    fprintf(blok_profiler_output_file,
+            "    { \"name\": \"%s\", \"ph\": \"%c\", \"ts\": %llu, \"tid\": 1, "
+            "\"pid\": 1, \"args\": { \"file\": \"%s\", \"line\": %d } }",
+            name, ph, ts, file, line);
     return begin;
 }
 
-#define blok_profiler_start(name) blok_profiler_log(name, true, blok_profiler_timestamp())
-#define blok_profiler_stop(name) blok_profiler_log(name, false, blok_profiler_timestamp())
+#define blok_profiler_start(name) blok_profiler_log(name, true, blok_profiler_timestamp(), __FILE__, __LINE__)
+#define blok_profiler_stop(name) blok_profiler_log(name, false, blok_profiler_timestamp(), __FILE__, __LINE__)
 #define blok_profiler_do(name) for(bool _i = blok_profiler_start(name); _i; _i = blok_profiler_stop(name)) 
 
 #endif /*BLOK_PROFILER_DISABLE*/
