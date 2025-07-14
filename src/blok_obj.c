@@ -14,6 +14,7 @@
 
 #include "blok_arena.c"
 #include "blok_vec.c"
+#include "blok_profiler.c"
 
 #define BLOK_NORETURN __attribute__((noreturn))
 #define BLOK_LOG(...) do { fprintf(stderr, "LOG:" __VA_ARGS__ ); fflush(stderr); } while(0)
@@ -559,13 +560,15 @@ void blok_string_append(blok_String * l, char ch) {
 
 blok_Table blok_table_init_capacity(blok_Arena * a, size_t cap) {
     blok_Table table = {0};
-    const uint64_t bytes = sizeof(blok_KeyValue) * cap;
-    table.items = blok_arena_alloc(a, bytes);
-    memset(table.items, 0, bytes);
-    table.count = 0;
-    table.iterate_i = 0;
-    table.cap = cap;
-    table.arena = a;
+    blok_profile(table_init) {
+        const uint64_t bytes = sizeof(blok_KeyValue) * cap;
+        table.items = blok_arena_alloc(a, bytes);
+        memset(table.items, 0, bytes);
+        table.count = 0;
+        table.iterate_i = 0;
+        table.cap = cap;
+        table.arena = a;
+    }
     return table;
 }
 
@@ -634,7 +637,11 @@ blok_KeyValue * blok_table_find_slot(blok_Table * table, blok_Symbol key) {
 }
 
 bool blok_table_contains_key(blok_Table * table, blok_Symbol key) {
-    return blok_table_find_slot(table, key) == NULL;
+    bool result = false;
+    blok_profile(table_contains_key) {
+        result = blok_table_find_slot(table, key) == NULL;
+    }
+    return result;
 }
 
 blok_Obj blok_table_get(blok_Arena * destination_scope, blok_Table * table, blok_Symbol key) {
@@ -948,6 +955,7 @@ void blok_keyvalue_fprint(blok_State * s, FILE * fp, blok_KeyValue * const kv, b
 }
 
 void blok_table_fprint(blok_State * s, FILE * fp, blok_Table * const table, blok_Style style) {
+    blok_profile(table_fprint) {
     blok_table_iterate_start(table);
     blok_KeyValue * kv = NULL;
     bool first = true;
@@ -958,6 +966,7 @@ void blok_table_fprint(blok_State * s, FILE * fp, blok_Table * const table, blok
         blok_keyvalue_fprint(s, fp, kv, style);
     }
     fprintf(fp, "]");
+    }
 }
 
 void blok_fprint_escape_sequences(FILE * fp, const char * str, size_t max) {
@@ -983,16 +992,16 @@ void blok_fprint_escape_sequences(FILE * fp, const char * str, size_t max) {
 void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) {
     switch(obj.tag) {
         case BLOK_TAG_NIL: 
-            fprintf(fp, "nil");
+            blok_profile(fprint_nil) fprintf(fp, "nil");
             break;
         case BLOK_TAG_INT:
-            fprintf(fp, "%d", obj.as.data);
+            blok_profile(fprint_int) fprintf(fp, "%d", obj.as.data);
             break;
         case BLOK_TAG_PRIMITIVE:
-            fprintf(fp, "<Primitive %d>", obj.as.data);
+            blok_profile(fprint_primitive) fprintf(fp, "<Primitive %d>", obj.as.data);
             break;
         case BLOK_TAG_LIST:
-            {
+            blok_profile(fprint_list) {
                 blok_List * list = blok_list_from_obj(obj);
                 fprintf(fp, "(");
                 for(int i = 0; i < list->len; ++i) {
@@ -1032,7 +1041,7 @@ void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) 
 
 
 void blok_obj_print(blok_State * s, blok_Obj obj, blok_Style style) {
-    blok_obj_fprint(s, stdout, obj, style);
+    blok_profile(obj_fprint) blok_obj_fprint(s, stdout, obj, style);
 }
 
 

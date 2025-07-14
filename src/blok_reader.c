@@ -38,8 +38,13 @@ char blok_reader_peek(blok_Reader * r) {
 }
 
 void blok_reader_skip_whitespace(blok_Reader * r) {
-    if(blok_reader_eof(r)) return;
-    while(blok_reader_is_whitespace(blok_reader_peek(r))) blok_reader_getc(r);
+    blok_profile(reader_skip_whitespace) {
+        if(blok_reader_eof(r)) {
+            blok_profiler_stop("reader_skip_whitespace");
+            return;
+        }
+        while(blok_reader_is_whitespace(blok_reader_peek(r))) blok_reader_getc(r);
+    }
 }
 
 void blok_reader_skip_char(blok_Reader * r, char expected) {
@@ -50,6 +55,7 @@ void blok_reader_skip_char(blok_Reader * r, char expected) {
 }
 
 blok_Obj blok_reader_parse_int(blok_Reader * r) {
+    blok_profiler_start("reader_parse_int");
     assert(isdigit(blok_reader_peek(r)));
     char buf[1024] = {0};
     size_t i = 0;
@@ -65,6 +71,7 @@ blok_Obj blok_reader_parse_int(blok_Reader * r) {
     }
     blok_Obj result = blok_make_int(num);
     result.src_info = r->src_info;
+    blok_profiler_stop("reader_parse_int");
     return result;
 }
 
@@ -73,6 +80,7 @@ blok_Obj blok_reader_parse_int(blok_Reader * r) {
 #define BLOK_READER_STATE_ESCAPE 1
 
 blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
+    blok_profiler_start("reader_parse_string");
     blok_reader_skip_char(r, '"');
     int state = BLOK_READER_STATE_BASE;
     blok_String * str = blok_string_allocate(b, 8);
@@ -87,6 +95,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * b, blok_Reader * r) {
                     blok_reader_skip_char(r, '"');
                     blok_Obj result =  blok_obj_from_string(str);
                     result.src_info = r->src_info;
+                    blok_profiler_stop("reader_parse_int");
                     return result;
                 } else {
                     blok_string_append(str, blok_reader_getc(r));
@@ -134,6 +143,7 @@ bool blok_reader_is_symbol_char(char ch) {
 blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * b, blok_Reader * r);
 
 blok_Obj blok_reader_parse_symbol(blok_State * s, blok_Arena * a, blok_Reader* r) {
+    blok_profiler_start("reader_parse_symbol");
     blok_SymbolData sym = {0};
     uint32_t i = 0;
 
@@ -176,16 +186,19 @@ blok_Obj blok_reader_parse_symbol(blok_State * s, blok_Arena * a, blok_Reader* r
         kv->value = blok_reader_parse_obj(s, a, r);
         blok_Obj result = blok_obj_from_keyvalue(kv);
         result.src_info = r->src_info;
+        blok_profiler_stop("reader_parse_symbol");
         return result;
     } else {
         blok_Symbol result = blok_symboldata_intern(s, sym);
         blok_Obj result_obj = blok_make_symbol(result);
         result_obj.src_info = r->src_info;
+        blok_profiler_stop("reader_parse_symbol");
         return result_obj;
     }
 }
 
 blok_Obj blok_reader_parse_list(blok_State * s, blok_Arena * a, blok_Reader * r) {
+        blok_profiler_start("reader_parse_list");
         blok_reader_skip_char(r, '(');
         blok_reader_skip_whitespace(r);
 
@@ -222,21 +235,27 @@ blok_Obj blok_reader_parse_list(blok_State * s, blok_Arena * a, blok_Reader * r)
 
         blok_Obj result_obj = blok_obj_from_list(result);
         result_obj.src_info = r->src_info;
+        blok_profiler_stop("reader_parse_list");
         return result_obj;
 }
 
 //blok_Obj blok_reader_read_obj(FILE *);
 blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * a, blok_Reader * r) {
+    blok_profiler_start("reader_parse_obj");
     blok_reader_skip_whitespace(r);
     const char ch = blok_reader_peek(r);
 
     if(isdigit(ch)) {
+        blok_profiler_stop("reader_parse_obj");
         return blok_reader_parse_int(r); 
     } else if(ch == '(') {
+        blok_profiler_stop("reader_parse_obj");
         return blok_reader_parse_list(s, a, r);
     } else if(ch == '"') {
+        blok_profiler_stop("reader_parse_obj");
         return blok_reader_parse_string(a, r);
     } else if(blok_reader_is_begin_symbol_char(ch)) {
+        blok_profiler_stop("reader_parse_obj");
         return blok_reader_parse_symbol(s, a, r);
     } else {
         blok_fatal_error(&r->src_info, "Encountered unexpected character '%c' when parsing object", ch);
@@ -245,6 +264,8 @@ blok_Obj blok_reader_parse_obj(blok_State * s, blok_Arena * a, blok_Reader * r) 
 }
 
 blok_Obj blok_reader_read_file(blok_State * s, blok_Arena * a, char const * path) {
+
+    blok_profiler_start("reader_read_file");
     blok_List * result = blok_list_allocate(a, 32);
 
     blok_Reader r = {0};
@@ -266,6 +287,7 @@ blok_Obj blok_reader_read_file(blok_State * s, blok_Arena * a, char const * path
         blok_reader_skip_whitespace(&r);
     }
     fclose(r.fp);
+    blok_profiler_stop("reader_read_file");
     return blok_obj_from_list(result);
 }
 

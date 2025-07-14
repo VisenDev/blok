@@ -53,14 +53,16 @@ void blok_slice_run_tests(void) {
 
 
 #define blok_vec_append(vec_ptr, arena_ptr, item) do { \
-    if((vec_ptr)->cap <= 0) { \
-        (vec_ptr)->cap = 2;    \
-        (vec_ptr)->items.ptr = blok_arena_alloc(arena_ptr, (vec_ptr)->cap * sizeof((vec_ptr)->_item)); \
-    } else if((vec_ptr)->items.len + 1 > (vec_ptr)->cap) { \
-        (vec_ptr)->cap = (vec_ptr)->cap * 2 + 1; \
-        (vec_ptr)->items.ptr = blok_arena_realloc(arena_ptr, (vec_ptr)->items.ptr, (vec_ptr)->cap * sizeof(vec_ptr)->_item); \
+    blok_profile(blok_vec_append) { \
+        if((vec_ptr)->cap <= 0) { \
+            (vec_ptr)->cap = 2;    \
+            (vec_ptr)->items.ptr = blok_arena_alloc(arena_ptr, (vec_ptr)->cap * sizeof((vec_ptr)->_item)); \
+        } else if((vec_ptr)->items.len + 1 > (vec_ptr)->cap) { \
+            (vec_ptr)->cap = (vec_ptr)->cap * 2 + 1; \
+            (vec_ptr)->items.ptr = blok_arena_realloc(arena_ptr, (vec_ptr)->items.ptr, (vec_ptr)->cap * sizeof(vec_ptr)->_item); \
+        } \
+        (vec_ptr)->items.ptr[(vec_ptr)->items.len++] = item; \
     } \
-    (vec_ptr)->items.ptr[(vec_ptr)->items.len++] = item; \
 } while (0)
 
 #define blok_vec_get(vec_ptr, i) blok_slice_get((vec_ptr)->items, i)

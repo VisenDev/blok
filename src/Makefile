@@ -4,7 +4,7 @@ MAX_ERRORS_CLANG= -ferror-limit=${ERRORS}
 SRC= *.c
 STD= c99
 DEBUG_FLAGS= -O0 -g -fsanitize=address,undefined
-RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math
+RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math #-DBLOK_PROFILER_DISABLE
 WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror
 
 main: $(SRC) Makefile 
@@ -28,5 +28,6 @@ clean:
 	if [ -e *.o ]; then trash *.o; fi
 	if [ -e *.i ]; then trash *.i; fi
 	if [ -e *.s ]; then trash *.s; fi
+	if [ -e profile.json ]; then trash profile.json; fi
 
 .PHONY clean run run_release:

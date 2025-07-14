@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "blok_profiler.c"
+
 typedef struct {
     size_t cap;
     bool active;
@@ -30,16 +32,19 @@ void blok_arena_fprint_contents(const blok_Arena * a, FILE * fp) {
 
 blok_Allocation blok_arena_allocation_new(size_t bytes) {
     /*allocate new*/
+    blok_profiler_start("arena_allocation_new");
     blok_Allocation new = (blok_Allocation){
         .active = false,
         .cap = bytes,
         .ptr = malloc(bytes),
     };
     assert(new.ptr != NULL);
+    blok_profiler_stop("arena_allocation_new");
     return new;
 }
 
 void blok_arena_append_allocation(blok_Arena * a, blok_Allocation new) {
+    blok_profiler_start("arena_append_allocation");
     if(a->cap == 0) {
         assert(a->len == 0);
         assert(a->allocations == NULL);
@@ -50,23 +55,27 @@ void blok_arena_append_allocation(blok_Arena * a, blok_Allocation new) {
         a->allocations = realloc(a->allocations, sizeof(blok_Allocation) * a->cap);
     }
     a->allocations[a->len++] = new;
+    blok_profiler_stop("arena_append_allocation");
 }
 
 
 void blok_arena_reserve(blok_Arena * a, size_t num_allocations, size_t bytes_per_allocation) {
+    blok_profiler_start("blok_arena_reserve");
     for(size_t i = 0; i < num_allocations; ++i) {
         blok_arena_append_allocation(a, blok_arena_allocation_new(bytes_per_allocation));
     }
+    blok_profiler_stop("blok_arena_reserve");
 }
 
 
 void * blok_arena_alloc(blok_Arena * a, size_t bytes) {
-
+    blok_profiler_start("blok_arena_alloc");
     /*search for available allocation*/
     for(size_t i = 0; i < a->len; ++i) {
         blok_Allocation * allocation = &a->allocations[i];
         if(allocation->active == false && allocation->cap >= bytes) {
             allocation->active = true; 
+            blok_profiler_stop("blok_arena_alloc");
             return allocation->ptr;
         }
     }
@@ -74,6 +83,8 @@ void * blok_arena_alloc(blok_Arena * a, size_t bytes) {
     blok_Allocation new = blok_arena_allocation_new(bytes);
     new.active = true;
     blok_arena_append_allocation(a, new);
+
+    blok_profiler_stop("blok_arena_alloc");
     return new.ptr;
 }
 
@@ -108,12 +119,14 @@ void blok_arena_reset(blok_Arena * a) {
 }
 
 void blok_arena_free(blok_Arena * a) {
-    for(size_t i = 0; i < a->len; ++i) {
-        free(a->allocations[i].ptr);
+    blok_profile(arena_free) {
+        for(size_t i = 0; i < a->len; ++i) {
+            free(a->allocations[i].ptr);
+        }
+        free(a->allocations);
+        a->cap = 0;
+        a->len = 0;
     }
-    free(a->allocations);
-    a->cap = 0;
-    a->len = 0;
 }
 
 void blok_arena_run_tests(void) {
