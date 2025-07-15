@@ -170,6 +170,7 @@ typedef struct {
 
 
 typedef blok_Vec(blok_Obj) blok_List;
+typedef blok_Slice(blok_Obj) blok_ListRef;
 typedef blok_Vec(char) blok_String;
 
 typedef enum {
@@ -298,6 +299,10 @@ blok_State blok_state_init(void) {
     blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
 
     return result;
+}
+
+void blok_state_deinit(blok_State * s) {
+    blok_arena_free(&s->persistent_arena);
 }
 
 /*
