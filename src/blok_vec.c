@@ -67,11 +67,15 @@ void blok_slice_run_tests(void) {
 #define blok_vec_foreach(Type, iterator, vec) \
     for(Type * iterator = (vec)->items.ptr; iterator < (vec)->items.ptr + (vec)->items.len; ++iterator)
 
-#define blok_vec_find(iterator, vec, stop_condition) \
-    for(iterator = (vec)->items.ptr ;iterator < blok_vec_end(vec); ++iterator) { \
-        if(stop_condition) break;  \
-    } \
-    if(iterator >= (blok_vec_end(vec))) iterator = NULL
+#define blok_vec_find(result, vec, stop_condition) \
+    do { \
+        blok_profiler_start("blok_vec_find"); \
+        for((result) = (vec)->items.ptr ;(result) < blok_vec_end(vec); ++(result)) { \
+            if(stop_condition) break;  \
+        } \
+        if((result) >= (blok_vec_end(vec))) (result) = NULL; \
+        blok_profiler_stop("blok_vec_find"); \
+    } while (0) 
 
 
 
@@ -97,7 +101,13 @@ void blok_vec_run_tests(void) {
         blok_vec_find(it, &v, *it == 2); 
         assert(*it == 2);
 
-        blok_vec_find(it, &v, *it == 0);
+        for(int i = 0; i < 100; ++i) {
+            blok_vec_append(&v, &a, i);
+        }
+        blok_vec_find(it, &v, *it == 80);
+        assert(*it == 80);
+
+        blok_vec_find(it, &v, *it == -1);
         assert(it == NULL);
 
         blok_arena_free(&a);

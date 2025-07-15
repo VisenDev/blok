@@ -85,6 +85,9 @@ typedef enum {
     /*ANYTYPE*/
     BLOK_TYPETAG_OBJ,
 
+    /*FUNCTION POINTERS*/
+    BLOK_TYPETAG_FUNCTION,
+
     /*FUNDAMENTAL TYPES*/
     BLOK_TYPETAG_INT,
     BLOK_TYPETAG_BOOLEAN,
@@ -203,7 +206,7 @@ typedef struct {
 
 typedef struct {
     blok_Symbol name;
-    blok_TypeData type;
+    blok_Type type;
     blok_Obj value;
 } blok_Binding;
 
@@ -218,26 +221,21 @@ typedef struct {
 
     blok_Bindings toplevel_builtins;
     blok_Bindings local_builtins;
-    blok_Bindings globals;
 } blok_State;
 
-typedef blok_Optional(blok_Obj) blok_OptionalObj;
 
-blok_OptionalObj blok_alist_find(const blok_AList * list, blok_Symbol sym) {
-    blok_profiler_start("blok_alist_find");
-    blok_OptionalObj result = {0};
-    blok_vec_foreach(blok_KeyValue, it, list) {
-        if(it->key == sym) {
-            result.valid = true;
-            result.value = it->value;
-            blok_profiler_stop("blok_alist_find");
-            return result;
-        }
-    }
-    result.valid = false;
-    blok_profiler_stop("blok_alist_find");
-    return result;
+typedef enum blok_Primitive {
+    BLOK_PRIMITIVE_LET,
+    BLOK_PRIMITIVE_PROCEDURE,
+    BLOK_PRIMITIVE_PRINT_INT,
+    BLOK_PRIMITIVE_RETURN
+} blok_Primitive;
+
+
+blok_Obj blok_make_primitive(blok_Primitive data) {
+    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
 }
+
 
 blok_SymbolData blok_symbol_get_data(const blok_State * s, blok_Symbol id) {
     assert(id != 0 && "0 is the NULL symbol");
@@ -258,7 +256,7 @@ blok_Symbol blok_symboldata_intern(blok_State * s, blok_SymbolData sym) {
     return s->symbols.items.len;
 }
 
-blok_Symbol blok_symbol_intern_str(blok_State * s, const char * symbol) {
+blok_Symbol blok_symbol_from_string(blok_State * s, const char * symbol) {
     blok_SymbolData sym = {0};
     assert(strlen(symbol) < sizeof(sym.buf));
     strcpy(sym.buf, symbol);
@@ -271,6 +269,35 @@ blok_TypeData blok_type_from_id(const blok_State * s, blok_Type id) {
     assert(id >= 0);
     assert(id < s->types.items.len);
     return blok_slice_get(s->types.items, id);
+}
+
+
+void blok_state_bind_builtin(blok_State * s, const char * symbol, blok_Obj value, bool toplevel) {
+    blok_Binding binding = {
+        .name = blok_symbol_from_string(s, symbol),
+        .value = value,
+        .type = BLOK_TYPETAG_OBJ,
+    };
+    if(toplevel) {
+        blok_vec_append(&s->toplevel_builtins, &s->persistent_arena, binding);
+    } else {
+        blok_vec_append(&s->local_builtins, &s->persistent_arena, binding);
+    }
+}
+
+blok_State blok_state_init(void) {
+    blok_State result = {0};
+    blok_State * s = &result;
+
+    //TOPLEVEL
+    blok_state_bind_builtin(s, "#let",       blok_make_primitive(BLOK_PRIMITIVE_LET),        true);
+    blok_state_bind_builtin(s, "#procedure", blok_make_primitive(BLOK_PRIMITIVE_PROCEDURE),  true);
+    blok_state_bind_builtin(s, "print_int",  blok_make_primitive(BLOK_PRIMITIVE_PRINT_INT),  true);
+
+    //LOCAL
+    blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
+
+    return result;
 }
 
 /*

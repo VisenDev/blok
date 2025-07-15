@@ -7,17 +7,6 @@
 #include <ctype.h>
 
 /* TODO, make the contents of a file and a progn different primitives*/
-typedef enum blok_Primitive {
-    BLOK_PRIMITIVE_TOPLEVEL,
-    BLOK_PRIMITIVE_PROCEDURE,
-    BLOK_PRIMITIVE_INT,
-    BLOK_PRIMITIVE_PRINT
-} blok_Primitive;
-
-
-blok_Obj blok_make_primitive(blok_Primitive data) {
-    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
-}
 
 /*
 blok_Obj blok_scope_lookup(blok_Arena * destination_arena, blok_Scope * b, blok_SymbolData sym) {
@@ -159,7 +148,7 @@ blok_Obj blok_evaluator_eval(blok_Scope * b, blok_Obj obj) {
 //    (void) globals;
 //    (void) output;
 //}
-
+//
 
 
 bool blok_symbol_is_varname(blok_State * s, blok_Symbol symbol) {
@@ -212,11 +201,10 @@ void blok_primitive_toplevel_let(blok_State * s, blok_AList * globals, blok_Obj 
     (void) let;
 }
 
-
 //returns a table of globals
-blok_AList * blok_primitive_toplevel(blok_State * s, blok_List * sexpr, FILE * output) {
+blok_AList blok_primitive_toplevel(blok_State * s, blok_List * sexpr, FILE * output) {
     (void) output;
-    blok_AList * globals = NULL; //blok_table_allocate(a, 16);
+    blok_AList globals = {0};
     for(int32_t i = 0; i < sexpr->items.len; ++i) {
         blok_Obj item = sexpr->items.ptr[i];
         if(item.tag != BLOK_TAG_LIST) {
@@ -237,15 +225,15 @@ blok_AList * blok_primitive_toplevel(blok_State * s, blok_List * sexpr, FILE * o
                     blok_tag_get_name(head.tag));
         }
         blok_Symbol sym = blok_symbol_from_obj(head);
-        if(blok_symbol_streql(s, sym, "#let")) {
-            blok_primitive_toplevel_let(s, globals, item);
-        } else if(blok_symbol_streql(s, sym, "#procedure")) {
-            //blok_primitive_procedure(s, globals, list, output); //TODO create output file
-            blok_fatal_error(NULL, "TODO");
+        blok_Binding * it; 
+        blok_vec_find(it, &s->toplevel_builtins, it->name == sym);
+        if(it == NULL) {
+            blok_fatal_error(&head.src_info, "Unknown toplevel symbol");
         } else {
-            blok_SymbolData symbol = blok_symbol_get_data(s, sym);
-            blok_fatal_error(&head.src_info, "Invalid toplevel s-expression head symbol: '%s'", symbol.buf);
+            blok_Obj value = it->value;
+            blok_primitive_toplevel_let(s, globals, item);
         }
+
     }
     return globals;
 }
