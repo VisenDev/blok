@@ -201,38 +201,49 @@ void blok_primitive_toplevel_let(blok_State * s, blok_AList * globals, blok_Obj 
     (void) let;
 }
 
+void blok_evaluator_validate_sexpr(blok_State * s, blok_Obj sexpr) {
+    if(sexpr.tag != BLOK_TAG_LIST)
+        blok_fatal_error(&sexpr.src_info, "Expected s-expression, found %s", blok_tag_get_name(sexpr.tag));
+    blok_List * l = blok_list_from_obj(sexpr);
+    if(l->items.len < 1) 
+        blok_fatal_error(&sexpr.src_info, "Found empty s-expression");
+    if(l->items.ptr[0].tag != BLOK_TAG_SYMBOL)
+        blok_fatal_error(&sexpr.src_info, "Expected symbol inside s-expression, found %s", blok_tag_get_name(l->items.ptr[0].tag));
+}
+
+void blok_evaluator_toplevel_sexpr(blok_State * s, blok_Obj sexpr, FILE * output) {
+    blok_Obj 
+
+}
+
 //returns a table of globals
-blok_AList blok_primitive_toplevel(blok_State * s, blok_List * sexpr, FILE * output) {
+blok_AList blok_evaluator_toplevel(blok_State * s, blok_List * toplevel, FILE * output) {
     (void) output;
     blok_AList globals = {0};
-    for(int32_t i = 0; i < sexpr->items.len; ++i) {
-        blok_Obj item = sexpr->items.ptr[i];
-        if(item.tag != BLOK_TAG_LIST) {
-            blok_fatal_error(
-                    &item.src_info,
-                    "Toplevel forms may only be s-expressions (lists), found a %s",
-                    blok_tag_get_name(item.tag));
-        }
-        blok_List * list = blok_list_from_obj(item);
-        if(list->items.len <= 0) {
-            blok_fatal_error(&item.src_info, "Empty toplevel list");
-        }
-        blok_Obj head = list->items.ptr[0];
-        if(head.tag != BLOK_TAG_SYMBOL) {
-            blok_fatal_error(&head.src_info,
-                    "Invalid toplevel form, s-expressions should start "
-                    "with a list, found a %s",
-                    blok_tag_get_name(head.tag));
-        }
-        blok_Symbol sym = blok_symbol_from_obj(head);
-        blok_Binding * it; 
-        blok_vec_find(it, &s->toplevel_builtins, it->name == sym);
-        if(it == NULL) {
-            blok_fatal_error(&head.src_info, "Unknown toplevel symbol");
-        } else {
-            blok_Obj value = it->value;
-            blok_primitive_toplevel_let(s, globals, item);
-        }
+    for(int32_t i = 0; i < toplevel->items.len; ++i) {
+        blok_Obj sexpr = toplevel->items.ptr[i];
+        blok_evaluator_validate_sexpr(s, sexpr);
+        blok_evaluator_toplevel_sexpr(s, sexpr, output);
+        //blok_List * list = blok_list_from_obj(item);
+        //if(list->items.len <= 0) {
+        //    blok_fatal_error(&item.src_info, "Empty toplevel list");
+        //}
+        //blok_Obj head = list->items.ptr[0];
+        //if(head.tag != BLOK_TAG_SYMBOL) {
+        //    blok_fatal_error(&head.src_info,
+        //            "Invalid toplevel form, s-expressions should start "
+        //            "with a list, found a %s",
+        //            blok_tag_get_name(head.tag));
+        //}
+        //blok_Symbol sym = blok_symbol_from_obj(head);
+        //blok_Binding * it; 
+        //blok_vec_find(it, &s->toplevel_builtins, it->name == sym);
+        //if(it == NULL) {
+        //    blok_fatal_error(&head.src_info, "Unknown toplevel symbol");
+        //} else {
+        //    blok_Obj value = it->value;
+        //    blok_primitive_toplevel_let(s, globals, item);
+        //}
 
     }
     return globals;
