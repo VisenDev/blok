@@ -20,34 +20,42 @@ bool blok_symbol_is_varname(blok_State * s, blok_Symbol symbol) {
     return true;
 }
 
-blok_Type blok_expr_infer_type(blok_Arena * a, blok_Obj expr) {
-    (void) a;
-    (void) expr;
-    blok_fatal_error(NULL, "TODO: implement type inference");
-    return (blok_Type){0}; 
+blok_Type blok_expr_infer_type(blok_State * s, blok_Obj expr) {
+    switch(expr.tag) {
+        case BLOK_TAG_NIL:
+            return blok_type_void(s);
+        case BLOK_TAG_INT:
+            return blok_type_int(s);
+        case BLOK_TAG_STRING:
+            return blok_type_string(s);
+        default:
+            blok_fatal_error(&expr.src_info, "TODO: implement type inference for this type of obj");
+    }
 }
 
-void blok_primitive_toplevel_let(blok_State * s, blok_AList * globals, blok_Obj sexpr_obj) {
-    (void)globals;
-    blok_List * sexpr = blok_list_from_obj(sexpr_obj);
-    if(sexpr->items.len != 3) {
-        blok_fatal_error(&sexpr_obj.src_info, "Invalid #let form, expected (#let <name> <value>)");
+void blok_primitive_toplevel_let(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+    (void)output;
+    if(args.len != 2) {
+        if(args.len <= 0) {
+            blok_fatal_error(NULL, "Let forms required 2 arguments");
+        } else {
+            blok_fatal_error(&args.ptr[0].src_info, "Let forms required 2 arguments");
+        }
     }
-    blok_Obj let = sexpr->items.ptr[0];
-    assert(let.tag == BLOK_TAG_SYMBOL);
-    assert(blok_symbol_streql(s, blok_symbol_from_obj(let), "#let"));
-    blok_Obj name_obj = sexpr->items.ptr[1];
-    if(name_obj.tag != BLOK_TAG_SYMBOL) {
-        blok_fatal_error(&name_obj.src_info, "Expected symbol inside #let form, found %s", blok_tag_get_name(name_obj.tag));
-    }
-    blok_Symbol name = blok_symbol_from_obj(name_obj);
+    blok_Symbol name = blok_symbol_from_obj(args.ptr[0]);
     if(!blok_symbol_is_varname(s, name)) {
         blok_SymbolData namesym = blok_symbol_get_data(s, name);
-        blok_fatal_error(&name_obj.src_info, "Invalid variable name provided inside #let form: %s", namesym.buf);
+        blok_fatal_error(&args.ptr[0].src_info, "Invalid variable name provided inside #let form: %s", namesym.buf);
     }
-    blok_Obj expr = sexpr->items.ptr[2];
-    (void)expr;
-    (void) let;
+    blok_Obj expr = args.ptr[1];
+    blok_Type type = blok_expr_infer_type(s, expr);
+    blok_Binding * it = NULL;
+    blok_vec_find(it, globals, it->name == name);
+    if(it != NULL) {
+        blok_fatal_error(&args.ptr[0].src_info, "Multiply defined symbol");
+    }
+    blok_Binding binding = (blok_Binding){.name = name, .type = type, .value = args.ptr[1]};
+    blok_vec_append(globals, &s->persistent_arena, binding);
 }
 
 void blok_evaluator_validate_sexpr(blok_State * s, blok_Obj sexpr) {
@@ -61,15 +69,16 @@ void blok_evaluator_validate_sexpr(blok_State * s, blok_Obj sexpr) {
         blok_fatal_error(&sexpr.src_info, "Expected symbol inside s-expression, found %s", blok_tag_get_name(l->items.ptr[0].tag));
 }
 
-void blok_evaluator_toplevel_apply_primitive(blok_State * s, blok_AList * globals, blok_Primitive prim, blok_ListRef args, FILE * output) {
+void blok_evaluator_toplevel_apply_primitive(blok_State * s, blok_Bindings * globals, blok_Primitive prim, blok_ListRef args, FILE * output) {
     (void)s;
     (void)globals;
     (void)prim;
     (void)args;
     (void)output;
+    blok_fatal_error(NULL, "TODO: implement blok_evaluator_toplevel_apply_primitive");
 }
 
-void blok_evaluator_toplevel_sexpr(blok_State * s, blok_AList * globals, blok_Obj sexpr, FILE * output) {
+void blok_evaluator_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_Obj sexpr, FILE * output) {
         blok_Binding * it; 
         blok_List * sexpr_list = blok_list_from_obj(sexpr);
         blok_ListRef args = blok_slice_tail(sexpr_list->items, 1);
@@ -89,9 +98,9 @@ void blok_evaluator_toplevel_sexpr(blok_State * s, blok_AList * globals, blok_Ob
 }
 
 //returns a table of globals
-blok_AList blok_evaluator_toplevel(blok_State * s, blok_List * toplevel, FILE * output) {
+blok_Bindings blok_evaluator_toplevel(blok_State * s, blok_List * toplevel, FILE * output) {
     (void) output;
-    blok_AList globals = {0};
+    blok_Bindings globals = {0};
     for(int32_t i = 0; i < toplevel->items.len; ++i) {
         blok_Obj sexpr = toplevel->items.ptr[i];
         blok_evaluator_validate_sexpr(s, sexpr);

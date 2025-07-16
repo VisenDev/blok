@@ -88,6 +88,9 @@ typedef enum {
     /*FUNCTION POINTERS*/
     BLOK_TYPETAG_FUNCTION,
 
+    /*EMPTY TYPE*/
+    BLOK_TYPETAG_VOID,
+
     /*FUNDAMENTAL TYPES*/
     BLOK_TYPETAG_INT,
     BLOK_TYPETAG_BOOLEAN,
@@ -111,16 +114,14 @@ typedef struct {
     blok_Type type;
 } blok_FieldType;
 
+typedef blok_Vec(blok_FieldType) blok_Fields;
+
 typedef struct {
-    blok_FieldType * items; /*fields*/
-    int32_t len;
-    int32_t cap;
+    blok_Fields fields;
 } blok_StructType;
 
 typedef struct {
-    blok_FieldType * items; /*fields*/
-    int32_t len;
-    int32_t cap;
+    blok_Fields fields;
 } blok_UnionType;
 
 typedef struct {
@@ -265,11 +266,84 @@ blok_Symbol blok_symbol_from_string(blok_State * s, const char * symbol) {
 }
 
 
+blok_TypeData blok_type_get_data(const blok_State * s, blok_Type id) {
+    assert(id != 0 && "0 is the NULL type");
+    assert(id > 0);
+    assert(id <= s->types.items.len);
+    return blok_slice_get(s->types.items, id - 1);
+}
 
-blok_TypeData blok_type_from_id(const blok_State * s, blok_Type id) {
-    assert(id >= 0);
-    assert(id < s->types.items.len);
-    return blok_slice_get(s->types.items, id);
+bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
+    if(lhs.tag != rhs.tag) return false;
+
+    assert(lhs.tag == rhs.tag);
+    switch(lhs.tag) {
+        case BLOK_TYPETAG_BOOLEAN:
+        case BLOK_TYPETAG_VOID:
+        case BLOK_TYPETAG_INT:
+        case BLOK_TYPETAG_STRING:
+        case BLOK_TYPETAG_OBJ:
+        case BLOK_TYPETAG_TYPE:
+        case BLOK_TYPETAG_SYMBOL:
+        case BLOK_TYPETAG_FUNCTION:
+            return true;
+        case BLOK_TYPETAG_LIST:
+            return lhs.as.list.item_type == rhs.as.list.item_type;
+        case BLOK_TYPETAG_OPTIONAL:
+            return lhs.as.optional.type == rhs.as.optional.type;
+        case BLOK_TYPETAG_STRUCT: {
+            blok_Fields l = lhs.as.struct_.fields;
+            blok_Fields r = rhs.as.struct_.fields;
+            if(l.items.len != r.items.len) {
+                return false;
+            } else {
+                for(int i = 0; i < l.items.len; ++i) {
+                    blok_FieldType lf = l.items.ptr[i];
+                    blok_FieldType rf = r.items.ptr[i];
+                    if(lf.name != rf.name || lf.type != rf.type) return false;
+                }
+            }
+            return true;
+        }
+        case BLOK_TYPETAG_UNION: {
+            blok_Fields l = lhs.as.union_.fields;
+            blok_Fields r = rhs.as.union_.fields;
+            if(l.items.len != r.items.len) {
+                return false;
+            } else {
+                for(int i = 0; i < l.items.len; ++i) {
+                    blok_FieldType lf = l.items.ptr[i];
+                    blok_FieldType rf = r.items.ptr[i];
+                    if(lf.name != rf.name || lf.type != rf.type) return false;
+                }
+            }
+            return true;
+        }
+
+
+    }
+}
+
+blok_Symbol blok_typedata_intern(blok_State * s, blok_TypeData type) {
+    for(blok_Type i = 0; i < s->types.items.len; ++i) {
+        if(blok_typedata_equal(type, blok_slice_get(s->types.items, i))) {
+            return i + 1;
+        }
+    }
+    blok_vec_append(&s->types, &s->persistent_arena, type);
+    return s->types.items.len;
+}
+
+blok_Type blok_type_void(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_VOID});
+}
+
+blok_Type blok_type_int(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_INT});
+}
+
+blok_Type blok_type_string(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_STRING});
 }
 
 
