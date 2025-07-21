@@ -128,6 +128,20 @@ typedef struct {
     blok_Type type;
 } blok_OptionalType;
 
+typedef struct {
+    blok_Type type;
+    bool noeval;
+} blok_ParamType;
+
+#define BLOK_PARAMETER_COUNT_MAX 8
+typedef struct blok_FunctionSignature {
+    blok_Type return_type;
+    blok_Type params[BLOK_PARAMETER_COUNT_MAX];
+    int32_t param_count;
+    bool variadic;
+    blok_Type variadic_args_type;
+} blok_FunctionSignature;
+
 typedef struct blok_TypeData {
     blok_TypeTag tag; 
     union {
@@ -135,6 +149,7 @@ typedef struct blok_TypeData {
         blok_UnionType union_;
         blok_StructType struct_;
         blok_OptionalType optional;
+        blok_FunctionSignature function;
     } as;
 } blok_TypeData;
 
@@ -192,12 +207,18 @@ typedef struct {
     blok_Obj value;
 } blok_KeyValue;
 
-#define BLOK_PARAMETER_COUNT_MAX 8
-typedef struct blok_FunctionSignature {
-    blok_Type return_type;
-    blok_Type params[BLOK_PARAMETER_COUNT_MAX];
-    int32_t param_count;
-} blok_FunctionSignature;
+
+bool blok_functionsignature_equal(blok_FunctionSignature l, const blok_FunctionSignature r) {
+    if(l.return_type != r.return_type) return false;
+    if(l.param_count != r.param_count) return false;
+    if(l.variadic != r.variadic) return false;
+    if(l.variadic && r.variadic && (l.variadic_args_type != r.variadic_args_type)) return false;
+    assert(l.param_count == r.param_count);
+    for(int32_t i = 0; i < l.param_count; ++i) {
+        if(l.params[i] != r.params[i]) return false;
+    }
+    return true;
+}
 
 typedef struct {
     //blok_Arena * arena;
@@ -226,17 +247,22 @@ typedef struct {
 } blok_State;
 
 
-typedef enum blok_Primitive {
+typedef enum {
     BLOK_PRIMITIVE_LET,
     BLOK_PRIMITIVE_PROCEDURE,
     BLOK_PRIMITIVE_PRINT_INT,
     BLOK_PRIMITIVE_RETURN
+} blok_PrimitiveTag;
+
+typedef struct {
+    blok_PrimitiveTag tag;
+    blok_FunctionSignature signature;
 } blok_Primitive;
 
 
-blok_Obj blok_make_primitive(blok_Primitive data) {
-    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
-}
+//blok_Obj blok_make_primitive(blok_Primitive data) {
+//    return (blok_Obj){.tag = BLOK_TAG_PRIMITIVE, .as.data = data};
+//}
 
 
 blok_SymbolData blok_symbol_get_data(const blok_State * s, blok_Symbol id) {
@@ -363,14 +389,15 @@ void blok_state_bind_builtin(blok_State * s, const char * symbol, blok_Obj value
 blok_State blok_state_init(void) {
     blok_State result = {0};
     blok_State * s = &result;
+    (void) s;
 
     //TOPLEVEL
-    blok_state_bind_builtin(s, "#let",       blok_make_primitive(BLOK_PRIMITIVE_LET),        true);
-    blok_state_bind_builtin(s, "#procedure", blok_make_primitive(BLOK_PRIMITIVE_PROCEDURE),  true);
-    blok_state_bind_builtin(s, "print_int",  blok_make_primitive(BLOK_PRIMITIVE_PRINT_INT),  true);
+    //blok_state_bind_builtin(s, "#let",       blok_make_primitive(BLOK_PRIMITIVE_LET),        true);
+    //blok_state_bind_builtin(s, "#procedure", blok_make_primitive(BLOK_PRIMITIVE_PROCEDURE),  true);
+    //blok_state_bind_builtin(s, "print_int",  blok_make_primitive(BLOK_PRIMITIVE_PRINT_INT),  true);
 
-    //LOCAL
-    blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
+    ////LOCAL
+    //blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
 
     return result;
 }
