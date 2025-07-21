@@ -1,5 +1,3 @@
-#include "blok_arena.c"
-#include "blok_vec.c"
 #include "blok_obj.c"
 #include "blok_reader.c"
 #include "blok_evaluator.c"
@@ -18,7 +16,8 @@ int main(void) {
     fflush(stdout);
 
     FILE * output = fopen("a.out.c", "w");
-    blok_evaluator_toplevel(&s, blok_list_from_obj(source), output);
+    //blok_evaluator_toplevel(&s, blok_list_from_obj(source), output);
+    blok_compiler_toplevel(&s, blok_list_from_obj(source), output);
     fclose(output);
 
     blok_state_deinit(&s);

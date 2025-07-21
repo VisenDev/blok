@@ -92,6 +92,7 @@ typedef enum {
     BLOK_TYPETAG_VOID,
 
     /*FUNDAMENTAL TYPES*/
+    BLOK_TYPETAG_NIL,
     BLOK_TYPETAG_INT,
     BLOK_TYPETAG_BOOL,
     BLOK_TYPETAG_STRING,
@@ -136,10 +137,10 @@ typedef struct {
 #define BLOK_PARAMETER_COUNT_MAX 8
 typedef struct blok_FunctionSignature {
     blok_Type return_type;
-    blok_Type params[BLOK_PARAMETER_COUNT_MAX];
+    blok_ParamType params[BLOK_PARAMETER_COUNT_MAX];
     int32_t param_count;
     bool variadic;
-    blok_Type variadic_args_type;
+    blok_ParamType variadic_args_type;
 } blok_FunctionSignature;
 
 typedef struct blok_TypeData {
@@ -207,15 +208,18 @@ typedef struct {
     blok_Obj value;
 } blok_KeyValue;
 
+bool blok_paramtype_equal(blok_ParamType l, blok_ParamType r) {
+    return l.type == r.type && l.noeval == r.noeval;
+}
 
 bool blok_functionsignature_equal(blok_FunctionSignature l, const blok_FunctionSignature r) {
     if(l.return_type != r.return_type) return false;
     if(l.param_count != r.param_count) return false;
     if(l.variadic != r.variadic) return false;
-    if(l.variadic && r.variadic && (l.variadic_args_type != r.variadic_args_type)) return false;
+    if(l.variadic && r.variadic && !blok_paramtype_equal(l.variadic_args_type, r.variadic_args_type)) return false;
     assert(l.param_count == r.param_count);
     for(int32_t i = 0; i < l.param_count; ++i) {
-        if(l.params[i] != r.params[i]) return false;
+        if(!blok_paramtype_equal(l.params[i], r.params[i])) return false;
     }
     return true;
 }
@@ -307,6 +311,7 @@ bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
         case BLOK_TYPETAG_BOOL:
         case BLOK_TYPETAG_VOID:
         case BLOK_TYPETAG_INT:
+        case BLOK_TYPETAG_NIL:
         case BLOK_TYPETAG_STRING:
         case BLOK_TYPETAG_OBJ:
         case BLOK_TYPETAG_TYPE:
@@ -534,6 +539,13 @@ blok_String * blok_string_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_STRING);
     obj.tag = 0;
     return (blok_String *) obj.as.ptr;
+}
+
+
+blok_Primitive * blok_primitive_from_obj(blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_PRIMITIVE);
+    obj.tag = 0;
+    return (blok_Primitive *) obj.as.ptr;
 }
 
 blok_Symbol blok_symbol_from_obj(blok_Obj obj) {

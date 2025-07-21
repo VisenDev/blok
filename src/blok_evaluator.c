@@ -78,7 +78,7 @@ void blok_compiler_validate_sexpr(blok_State * s, blok_Obj sexpr) {
 
 blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value);
 
-blok_Type blok_compiler_infer_typeof_list_value(blok_State * s, blok_List * l) {
+blok_Type blok_compiler_infer_typeof_value_list(blok_State * s, blok_List * l) {
     blok_Type obj_list_type = blok_type_list(s, blok_type_obj(s));
     if(l->items.len == 0) {
         return obj_list_type;
@@ -113,9 +113,39 @@ blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value) {
         case BLOK_TAG_SYMBOL:
             return blok_type_symbol(s);
         case BLOK_TAG_LIST:
-            return blok_compiler_infer_typeof_list_value(s, blok_list_from_obj(value));
+            return blok_compiler_infer_typeof_value_list(s, blok_list_from_obj(value));
         default:
             blok_fatal_error(NULL, "TODO: implement type inference for these types");
+    }
+}
+
+blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Obj sexpr) {
+    blok_compiler_validate_sexpr(s, sexpr);
+    blok_List * l = blok_list_from_obj(sexpr);
+    blok_Obj head_obj = l->items.ptr[0];
+    blok_Symbol head = head_obj.as.data;
+    blok_Binding * it = NULL;
+    blok_vec_find(it, bindings, head == it->name);
+    if(it == NULL) {
+        blok_fatal_error(src, "Unbound symbol");
+    } else {
+        blok_TypeData type_data = blok_type_get_data(s, it->type);
+        if(type_data.tag == BLOK_TYPETAG_FUNCTION) {
+            return type_data.as.function.return_type;
+        } else {
+            blok_fatal_error(src, "Expected function");
+        }
+    }
+}
+
+blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Symbol sym) {
+    (void) s;
+    blok_Binding * it = NULL;
+    blok_vec_find(it, bindings, sym == it->name);
+    if(it == NULL) {
+        blok_fatal_error(src, "Unbound symbol");
+    } else {
+        return it->type;
     }
 }
 
@@ -133,73 +163,91 @@ blok_Type blok_compiler_infer_typeof_expr(blok_State * s, blok_SourceInfo * src,
         case BLOK_TAG_STRING:
             return blok_type_string(s);
         case BLOK_TAG_SYMBOL:
-        {
-            blok_Binding * it = NULL;
-            blok_vec_find(it, bindings, expr.as.data == it->name);
-            if(it == NULL) {
-                blok_fatal_error(src, "Unbound symbol");
-            } else {
-                return it->type;
-            }
-        }
+            return blok_compiler_infer_typeof_expr_symbol(s, src, bindings, expr.as.data);
         case BLOK_TAG_LIST:
-        {
-            blok_compiler_validate_sexpr(s, expr);
-            blok_List * l = blok_list_from_obj(expr);
-            blok_Obj head_obj = l->items.ptr[0];
-            blok_Symbol head = head_obj.as.data;
-            blok_Binding * it = NULL;
-            blok_vec_find(it, bindings, head == it->name);
-            if(it == NULL) {
-                blok_fatal_error(src, "Unbound symbol");
-            } else {
-                switch(it->value.tag) {
-                    //TODO: get the functions return type
-                    case BLOK_TAG_FUNCTION:
-                    break;
-                }
-            }
-        }
+            return blok_compiler_infer_typeof_expr_list(s, src, bindings, expr);
         default:
             blok_fatal_error(NULL, "TODO: implement type inference for these types");
     }
 }
 
-//TODO
-//change this function to work by inferring the type of a value first,
-//then check the inferred type against the expected type
-void blok_compiler_typecheck_value(blok_State * s, blok_SourceInfo * src, blok_TypeData type, blok_Obj value) {
-}
-
-void blok_compiler_typecheck_expr(blok_State * s, blok_SourceInfo * src, blok_TypeData type, blok_Obj expr) {
-
-}
-
-void blok_compiler_typecheck_arg(blok_State *s, blok_SourceInfo * src, blok_ParamType type, blok_Obj arg) {
-    blok_TypeData data = blok_type_get_data(s, type.type);
-    if(type.noeval) {
-        blok_compiler_typecheck_value(s, src, data, arg);
+bool blok_compiler_type_coercible(blok_State * s, blok_Type to, blok_Type from) {
+    if(to == from) {
+        return true;
     } else {
-        blok_compiler_typecheck_expr(s, src, data, arg);
+        blok_TypeData t = blok_type_get_data(s, to);
+        blok_TypeData f = blok_type_get_data(s, from);
+        switch(t.tag) {
+            case BLOK_TYPETAG_OBJ:
+                return true;
+            case BLOK_TYPETAG_OPTIONAL: 
+                if(f.tag == BLOK_TYPETAG_NIL || from == t.as.optional.type) {
+                    return true;
+                } else {
+                    return false;
+                }
+            default:
+                BLOK_LOG("Types cannot be coerced");
+                return false;
+        }
     }
 }
 
-void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_FunctionSignature sig, blok_ListRef args) {
+void blok_compiler_typecheck_value(blok_State * s, blok_SourceInfo * src, blok_Type type, blok_Obj value) {
+    blok_Type value_type = blok_compiler_infer_typeof_value(s, value);
+    if(!blok_compiler_type_coercible(s, type, value_type)) {
+        blok_fatal_error(src, "Type mismatch");
+    }
+}
+
+void blok_compiler_typecheck_expr(blok_State * s,  blok_SourceInfo * src, blok_Bindings * bindings, blok_Type type, blok_Obj expr) {
+    blok_Type value_type = blok_compiler_infer_typeof_expr(s, src, bindings, expr);
+    if(!blok_compiler_type_coercible(s, type, value_type)) {
+        blok_fatal_error(src, "Type mismatch");
+    }
+}
+
+void blok_compiler_typecheck_arg(blok_State *s, blok_SourceInfo * src, blok_Bindings * bindings, blok_ParamType type, blok_Obj arg) {
+    if(type.noeval) {
+        blok_compiler_typecheck_value(s, src, type.type, arg);
+    } else {
+        blok_compiler_typecheck_expr(s, src, bindings, type.type, arg);
+    }
+}
+
+void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_FunctionSignature sig, blok_ListRef args) {
     if(sig.param_count > args.len) {
         blok_fatal_error(src, "Incorrect number of arguments, expected at least %d arguments, found %d arguments", sig.param_count, args.len);
     }
-
-    
+    for(int i = 0; i < sig.param_count; ++i) {
+        blok_compiler_typecheck_arg(s, src, bindings, sig.params[i], args.ptr[i]);
+    }
+    for(int i = sig.param_count; i < args.len; ++i) {
+        blok_compiler_typecheck_arg(s, src, bindings, sig.variadic_args_type, args.ptr[i]);
+    }
 }
 
-void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, blok_Primitive prim, blok_ListRef args, FILE * output) {
-    switch(prim) {
-        case BLOK_PRIMITIVE_LET:
-            blok_fatal_error(NULL, "TODO");
-        case BLOK_PRIMITIVE_PROCEDURE:
-            blok_compiler_primitive_procedure(s, globals, args, output);
+void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, blok_Obj prim, blok_ListRef args, FILE * output) {
+    blok_Primitive * p = blok_primitive_from_obj(prim);
+    blok_FunctionSignature sig = p->signature;
+    blok_compiler_typecheck_args(s, &prim.src_info, globals, sig, args);
+    (void)globals;
+    (void)output;
+    //TODO implement the primitives
+//    switch(prim) {
+//        case BLOK_PRIMITIVE_LET:
+//            blok_fatal_error(NULL, "TODO");
+//        case BLOK_PRIMITIVE_PROCEDURE:
+//            blok_compiler_primitive_procedure(s, globals, args, output);
+//
+    //}
+}
 
-    }
+void blok_compiler_apply_function(blok_State * s, blok_Bindings * globals, blok_Obj fn, blok_ListRef args, FILE * output) {
+    blok_Function * f = blok_function_from_obj(fn);
+    blok_FunctionSignature sig = f->signature;
+    blok_compiler_typecheck_args(s, &fn.src_info, globals, sig, args);
+    (void)output;
 }
 
 void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_Obj sexpr, FILE * output) {
@@ -214,9 +262,9 @@ void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_
         } else {
             blok_Obj head_value = it->value;
             if(head_value.tag == BLOK_TAG_PRIMITIVE) {
-                blok_compiler_apply_primitive(s, globals, head_value.as.data, args, output);
+                blok_compiler_apply_primitive(s, globals, head_value, args, output);
             } else if (head_value.tag == BLOK_TAG_FUNCTION) {
-                blok_compiler_apply_function(s, globals, head_value.as.data, args, output);
+                blok_compiler_apply_function(s, globals, head_value, args, output);
             } else {
                 blok_fatal_error(NULL, "TODO");
             }
