@@ -69,50 +69,106 @@ void blok_compiler_validate_sexpr(blok_State * s, blok_Obj sexpr) {
         blok_fatal_error(&sexpr.src_info, "Expected symbol inside s-expression, found %s", blok_tag_get_name(l->items.ptr[0].tag));
 }
 
-void blok_compiler_primitive_procedure(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+//void blok_compiler_primitive_procedure(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+//
+//
+//}
+//
 
 
+blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value);
+
+blok_Type blok_compiler_infer_typeof_list_value(blok_State * s, blok_List * l) {
+    blok_Type obj_list_type = blok_type_list(s, blok_type_obj(s));
+    if(l->items.len == 0) {
+        return obj_list_type;
+    }
+    blok_Type primary_item_type = -1;
+    blok_vec_foreach(blok_Obj, it, l) {
+        blok_Type item_type = blok_compiler_infer_typeof_value(s, *it);
+        if(primary_item_type == -1) {
+            primary_item_type = item_type;
+        } else {
+            if(primary_item_type != item_type) { //This means the list contains members of different types
+                return obj_list_type;
+            }
+        }
+    }
+    assert(primary_item_type != -1);
+    return blok_type_list(s, primary_item_type);
+}
+
+blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value) {
+    switch(value.tag) {
+        case BLOK_TAG_NIL:
+            return blok_type_void(s);
+        case BLOK_TAG_TYPE:
+            return blok_type_type(s);
+        case BLOK_TAG_BOOL:
+            return blok_type_bool(s);
+        case BLOK_TAG_INT:
+            return blok_type_int(s);
+        case BLOK_TAG_STRING:
+            return blok_type_string(s);
+        case BLOK_TAG_SYMBOL:
+            return blok_type_symbol(s);
+        case BLOK_TAG_LIST:
+            return blok_compiler_infer_typeof_list_value(s, blok_list_from_obj(value));
+        default:
+            blok_fatal_error(NULL, "TODO: implement type inference for these types");
+    }
+}
+
+//NOTE, an expr means it is evaluated, a value means it is not
+blok_Type blok_compiler_infer_typeof_expr(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Obj expr) {
+    switch(expr.tag) {
+        case BLOK_TAG_NIL:
+            return blok_type_void(s);
+        case BLOK_TAG_TYPE:
+            return blok_type_type(s);
+        case BLOK_TAG_BOOL:
+            return blok_type_bool(s);
+        case BLOK_TAG_INT:
+            return blok_type_int(s);
+        case BLOK_TAG_STRING:
+            return blok_type_string(s);
+        case BLOK_TAG_SYMBOL:
+        {
+            blok_Binding * it = NULL;
+            blok_vec_find(it, bindings, expr.as.data == it->name);
+            if(it == NULL) {
+                blok_fatal_error(src, "Unbound symbol");
+            } else {
+                return it->type;
+            }
+        }
+        case BLOK_TAG_LIST:
+        {
+            blok_compiler_validate_sexpr(s, expr);
+            blok_List * l = blok_list_from_obj(expr);
+            blok_Obj head_obj = l->items.ptr[0];
+            blok_Symbol head = head_obj.as.data;
+            blok_Binding * it = NULL;
+            blok_vec_find(it, bindings, head == it->name);
+            if(it == NULL) {
+                blok_fatal_error(src, "Unbound symbol");
+            } else {
+                switch(it->value.tag) {
+                    //TODO: get the functions return type
+                    case BLOK_TAG_FUNCTION:
+                    break;
+                }
+            }
+        }
+        default:
+            blok_fatal_error(NULL, "TODO: implement type inference for these types");
+    }
 }
 
 //TODO
 //change this function to work by inferring the type of a value first,
 //then check the inferred type against the expected type
 void blok_compiler_typecheck_value(blok_State * s, blok_SourceInfo * src, blok_TypeData type, blok_Obj value) {
-    switch(type.tag) {
-        case BLOK_TYPETAG_VOID:
-            blok_fatal_error(src, "Attempted to typecheck a value against a void type");
-            break;
-        case BLOK_TYPETAG_BOOLEAN:
-            if(value.tag != BLOK_TAG_BOOL) {
-                blok_fatal_error(src, "Expected value of type Boolean");
-            }
-            break;
-        case BLOK_TYPETAG_FUNCTION:
-            if(value.tag != BLOK_TAG_FUNCTION) {
-                blok_fatal_error(src, "Expected value of type Function");
-            } else {
-                blok_Function * value_sig = blok_function_from_obj(value);
-                if(!blok_functionsignature_equal(value_sig->signature, type.as.function)) {
-                    blok_fatal_error(src, "Unmatching function signature");
-                }
-            }
-            break;
-        case BLOK_TYPETAG_INT:
-            if(value.tag != BLOK_TAG_INT) {
-                blok_fatal_error(src, "Expected value of type Int");
-            }
-            break;
-        case BLOK_TYPETAG_LIST:
-            if(value.tag != BLOK_TAG_INT) {
-
-            }
-
-
-        
-
-
-
-    }
 }
 
 void blok_compiler_typecheck_expr(blok_State * s, blok_SourceInfo * src, blok_TypeData type, blok_Obj expr) {

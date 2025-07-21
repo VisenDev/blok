@@ -93,7 +93,7 @@ typedef enum {
 
     /*FUNDAMENTAL TYPES*/
     BLOK_TYPETAG_INT,
-    BLOK_TYPETAG_BOOLEAN,
+    BLOK_TYPETAG_BOOL,
     BLOK_TYPETAG_STRING,
     BLOK_TYPETAG_SYMBOL,
     BLOK_TYPETAG_TYPE,
@@ -304,7 +304,7 @@ bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
 
     assert(lhs.tag == rhs.tag);
     switch(lhs.tag) {
-        case BLOK_TYPETAG_BOOLEAN:
+        case BLOK_TYPETAG_BOOL:
         case BLOK_TYPETAG_VOID:
         case BLOK_TYPETAG_INT:
         case BLOK_TYPETAG_STRING:
@@ -368,8 +368,32 @@ blok_Type blok_type_int(blok_State * s) {
     return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_INT});
 }
 
+blok_Type blok_type_bool(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_BOOL});
+}
+
+blok_Type blok_type_type(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_TYPE});
+}
+
+blok_Type blok_type_symbol(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_SYMBOL});
+}
+
 blok_Type blok_type_string(blok_State * s) {
     return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_STRING});
+}
+
+
+blok_Type blok_type_obj(blok_State * s) {
+    return blok_typedata_intern(s, (blok_TypeData) {.tag = BLOK_TYPETAG_OBJ});
+}
+
+blok_Type blok_type_list(blok_State * s, blok_Type item_type) {
+    return blok_typedata_intern(s, (blok_TypeData) {
+            .tag = BLOK_TYPETAG_LIST,
+            .as.list = (blok_ListType){.item_type = item_type}
+        });
 }
 
 
