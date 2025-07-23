@@ -6,6 +6,81 @@
 
 #include <ctype.h>
 
+blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value);
+
+
+//void blok_state_bind_builtin(blok_State * s, const char * symbol, blok_Obj value, bool toplevel) {
+//    blok_Binding binding = {
+//        .name = blok_symbol_from_string(s, symbol),
+//        .value = value,
+//        .type = blok_compiler_infer_typeof_value(s, value),
+//    };
+//    if(toplevel) {
+//        blok_vec_append(&s->toplevel_builtins, &s->persistent_arena, binding);
+//    } else {
+//        blok_vec_append(&s->local_builtins, &s->persistent_arena, binding);
+//    }
+//}
+
+void blok_state_bind_toplevel_primitive(blok_State * s, blok_Primitive prim) {
+#ifndef NDEBUG
+    blok_Primitive * it = NULL;
+    blok_vec_find(it, &s->toplevel_primitives, it->name == prim.name);
+    assert(it == NULL && "Primitive is already defined");
+#endif /*NDEBUG*/
+
+    blok_vec_append(&s->toplevel_primitives, &s->persistent_arena, prim);
+}
+
+blok_State blok_state_init(void) {
+    blok_State result = {0};
+    blok_State * s = &result;
+    (void) s;
+
+    blok_state_bind_toplevel_primitive(s, (blok_Primitive){
+        .name = blok_symbol_from_string(s, "#let"),
+        .tag = BLOK_PRIMITIVE_LET,
+        .signature = (blok_FunctionSignature){
+            .param_count = 2,
+            .params = {
+                (blok_ParamType){.type = blok_type_symbol(s), .noeval = true },
+                (blok_ParamType){.type = blok_type_obj(s)}
+            },
+            .return_type = blok_type_void(s),
+        }
+    });
+
+    blok_state_bind_toplevel_primitive(s, (blok_Primitive){
+        .name = blok_symbol_from_string(s, "#procedure"),
+        .tag = BLOK_PRIMITIVE_PROCEDURE,
+        .signature = (blok_FunctionSignature){
+            .param_count = 3,
+            .params = {
+                (blok_ParamType){.type = blok_type_symbol(s), .noeval = true},
+                (blok_ParamType){.type = blok_type_symbol(s), .noeval = true},
+                (blok_ParamType){.type = blok_type_obj(s), .noeval = true},
+            },
+            .variadic = true,
+            .variadic_args_type = {.type = blok_type_obj(s), .noeval = true},
+            .return_type = blok_type_void(s),
+        }
+    });
+
+    //TOPLEVEL
+    //blok_state_bind_builtin(s, "#let", blok_obj_from_primitive(let)       ,        true);
+    //blok_state_bind_builtin(s, "#procedure", blok_make_primitive(BLOK_PRIMITIVE_PROCEDURE),  true);
+    //blok_state_bind_builtin(s, "print_int",  blok_make_primitive(BLOK_PRIMITIVE_PRINT_INT),  true);
+
+    ////LOCAL
+    //blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
+
+    return result;
+}
+
+void blok_state_deinit(blok_State * s) {
+    blok_arena_free(&s->persistent_arena);
+}
+
 bool blok_symbol_is_varname(blok_State * s, blok_Symbol symbol) {
     blok_SymbolData sym = blok_symbol_get_data(s, symbol);
     const char * ch = sym.buf;
@@ -219,18 +294,27 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bi
     if(sig.param_count > args.len) {
         blok_fatal_error(src, "Incorrect number of arguments, expected at least %d arguments, found %d arguments", sig.param_count, args.len);
     }
+    if(!sig.variadic && sig.param_count != args.len) {
+        blok_fatal_error(src, "Incorrect number of arguments, expected at %d arguments, found %d arguments", sig.param_count, args.len);
+    }
     for(int i = 0; i < sig.param_count; ++i) {
         blok_compiler_typecheck_arg(s, src, bindings, sig.params[i], args.ptr[i]);
     }
     for(int i = sig.param_count; i < args.len; ++i) {
         blok_compiler_typecheck_arg(s, src, bindings, sig.variadic_args_type, args.ptr[i]);
     }
+
+    BLOK_LOG("args are valid!\n");
 }
 
-void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, blok_Obj prim, blok_ListRef args, FILE * output) {
-    blok_Primitive * p = blok_primitive_from_obj(prim);
+void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, const blok_Primitive * p, blok_ListRef args, FILE * output) {
+    //blok_Primitive * p = blok_primitive_from_obj(prim);
     blok_FunctionSignature sig = p->signature;
-    blok_compiler_typecheck_args(s, &prim.src_info, globals, sig, args);
+    blok_SourceInfo * src = NULL;
+    if(args.len > 0) {
+        src = &args.ptr[0].src_info;
+    }
+    blok_compiler_typecheck_args(s, src, globals, sig, args);
     (void)globals;
     (void)output;
     //TODO implement the primitives
@@ -251,23 +335,25 @@ void blok_compiler_apply_function(blok_State * s, blok_Bindings * globals, blok_
 }
 
 void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_Obj sexpr, FILE * output) {
-        blok_Binding * it; 
         blok_List * sexpr_list = blok_list_from_obj(sexpr);
         blok_ListRef args = blok_slice_tail(sexpr_list->items, 1);
         blok_Symbol head = blok_symbol_from_obj(sexpr_list->items.ptr[0]);
-        blok_vec_find(it, &s->toplevel_builtins, it->name == head);
+
+        blok_Primitive * it; 
+        blok_vec_find(it, &s->toplevel_primitives, it->name == head);
         if(it == NULL) {
             blok_SymbolData data = blok_symbol_get_data(s, head);
             blok_fatal_error(&sexpr.src_info, "Unknown toplevel symbol: %s", data.buf);
         } else {
-            blok_Obj head_value = it->value;
-            if(head_value.tag == BLOK_TAG_PRIMITIVE) {
-                blok_compiler_apply_primitive(s, globals, head_value, args, output);
-            } else if (head_value.tag == BLOK_TAG_FUNCTION) {
-                blok_compiler_apply_function(s, globals, head_value, args, output);
-            } else {
-                blok_fatal_error(NULL, "TODO");
-            }
+            blok_compiler_apply_primitive(s, globals, it, args, output);
+            //blok_Obj head_value = it->value;
+            //if(head_value.tag == BLOK_TAG_PRIMITIVE) {
+            //    blok_compiler_apply_primitive(s, globals, head_value, args, output);
+            //} else if (head_value.tag == BLOK_TAG_FUNCTION) {
+            //    blok_compiler_apply_function(s, globals, head_value, args, output);
+            //} else {
+            //    blok_fatal_error(NULL, "TODO");
+            //}
         }
 }
 
@@ -277,6 +363,11 @@ blok_Bindings blok_compiler_toplevel(blok_State * s, blok_List * toplevel, FILE 
     blok_Bindings globals = {0};
     for(int32_t i = 0; i < toplevel->items.len; ++i) {
         blok_Obj sexpr = toplevel->items.ptr[i];
+        {
+            printf("Compiling: ");
+            blok_obj_print(s, sexpr, BLOK_STYLE_CODE);
+            printf("\n");
+        }
         blok_compiler_validate_sexpr(s, sexpr);
         blok_compiler_toplevel_sexpr(s, &globals, sexpr, output);
     }

@@ -13,6 +13,7 @@ int main(void) {
     blok_State s = blok_state_init();
     blok_Obj source = blok_reader_read_file(&s, &s.persistent_arena, "ideal.blok");
     blok_obj_print(&s, source, BLOK_STYLE_CODE);
+    puts("\n");
     fflush(stdout);
 
     FILE * output = fopen("a.out.c", "w");

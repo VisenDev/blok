@@ -240,17 +240,6 @@ typedef struct {
 typedef blok_Vec(blok_KeyValue) blok_AList;
 typedef blok_Vec(blok_Binding) blok_Bindings;
 
-typedef struct {
-    blok_Arena persistent_arena;
-    blok_Vec(blok_TypeData) types; 
-    blok_Vec(blok_SymbolData) symbols;
-    blok_Vec(blok_Arena) arenas;
-
-    blok_Bindings toplevel_builtins;
-    blok_Bindings local_builtins;
-} blok_State;
-
-
 typedef enum {
     BLOK_PRIMITIVE_LET,
     BLOK_PRIMITIVE_PROCEDURE,
@@ -259,9 +248,24 @@ typedef enum {
 } blok_PrimitiveTag;
 
 typedef struct {
+    blok_Symbol name;
     blok_PrimitiveTag tag;
     blok_FunctionSignature signature;
 } blok_Primitive;
+
+typedef blok_Vec(blok_Primitive) blok_Primitives;
+
+typedef struct {
+    blok_Arena persistent_arena;
+    blok_Vec(blok_TypeData) types; 
+    blok_Vec(blok_SymbolData) symbols;
+    blok_Vec(blok_Arena) arenas;
+
+    blok_Primitives toplevel_primitives;
+    blok_Bindings local_builtins;
+} blok_State;
+
+
 
 
 //blok_Obj blok_make_primitive(blok_Primitive data) {
@@ -402,38 +406,6 @@ blok_Type blok_type_list(blok_State * s, blok_Type item_type) {
 }
 
 
-void blok_state_bind_builtin(blok_State * s, const char * symbol, blok_Obj value, bool toplevel) {
-    blok_Binding binding = {
-        .name = blok_symbol_from_string(s, symbol),
-        .value = value,
-        .type = BLOK_TYPETAG_OBJ,
-    };
-    if(toplevel) {
-        blok_vec_append(&s->toplevel_builtins, &s->persistent_arena, binding);
-    } else {
-        blok_vec_append(&s->local_builtins, &s->persistent_arena, binding);
-    }
-}
-
-blok_State blok_state_init(void) {
-    blok_State result = {0};
-    blok_State * s = &result;
-    (void) s;
-
-    //TOPLEVEL
-    //blok_state_bind_builtin(s, "#let",       blok_make_primitive(BLOK_PRIMITIVE_LET),        true);
-    //blok_state_bind_builtin(s, "#procedure", blok_make_primitive(BLOK_PRIMITIVE_PROCEDURE),  true);
-    //blok_state_bind_builtin(s, "print_int",  blok_make_primitive(BLOK_PRIMITIVE_PRINT_INT),  true);
-
-    ////LOCAL
-    //blok_state_bind_builtin(s, "return",     blok_make_primitive(BLOK_PRIMITIVE_RETURN),     false);
-
-    return result;
-}
-
-void blok_state_deinit(blok_State * s) {
-    blok_arena_free(&s->persistent_arena);
-}
 
 /*
  * TODO: uncomment this
@@ -471,6 +443,7 @@ blok_Obj blok_obj_from_list(blok_List * l) { return blok_obj_from_ptr(l, BLOK_TA
 blok_Obj blok_obj_from_keyvalue(blok_KeyValue* l) { return blok_obj_from_ptr(l, BLOK_TAG_KEYVALUE); }
 blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
 blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
+blok_Obj blok_obj_from_primitive(blok_Primitive * f) { return blok_obj_from_ptr(f, BLOK_TAG_PRIMITIVE); }
 
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .as.data = data};
