@@ -171,6 +171,9 @@ const char * blok_tag_get_name(blok_Tag tag) {
         case BLOK_TAG_TYPE:      return "BLOK_TAG_TYPE";
         case BLOK_TAG_VARIABLE:  return "BLOK_TAG_VARIABLE";
     }
+
+    assert(0 && "Unreachable");
+    return NULL;
 }
 
 
@@ -354,9 +357,9 @@ bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
             }
             return true;
         }
-
-
     }
+    assert(0 && "Unreachable");
+    return false;
 }
 
 blok_Symbol blok_typedata_intern(blok_State * s, blok_TypeData type) {

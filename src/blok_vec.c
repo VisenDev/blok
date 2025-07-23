@@ -70,7 +70,7 @@ void blok_slice_run_tests(void) {
 #define blok_vec_find(result, vec, stop_condition) \
     do { \
         blok_profiler_start("blok_vec_find"); \
-        for((result) = (vec)->items.ptr ;(result) < blok_vec_end(vec); ++(result)) { \
+        for((result) = (vec)->items.ptr ;(vec)->items.ptr && (result) < blok_vec_end(vec); ++(result)) { \
             if(stop_condition) break;  \
         } \
         if((result) >= (blok_vec_end(vec))) (result) = NULL; \

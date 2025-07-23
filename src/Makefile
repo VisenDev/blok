@@ -1,28 +1,39 @@
-ERRORS=3
-MAX_ERRORS_GCC= --max-errors=${ERRORS}
-MAX_ERRORS_CLANG= -ferror-limit=${ERRORS}
-SRC= *.c
-STD= c99
+CC=gcc
+MAX_ERRORS=3
+GCC_FLAGS=--max-errors=${MAX_ERRORS}
+CLANG_FLAGS=-ferror-limit=${MAX_ERRORS}
+SRC=*.c
+STD=c99
+CFLAGS=-Wall -Wextra -Wpedantic -Werror -Wimplicit-fallthrough -Wshadow -std=$(STD)
 DEBUG_FLAGS= -O0 -g -fsanitize=address,undefined
 RELEASE_FLAGS= -O3 -DNDEBUG -ffast-math -DBLOK_PROFILER_DISABLE
-WARN_FLAGS= -Wall -Wextra -Wpedantic -Werror -Wimplicit-fallthrough -Wshadow
 
-main: $(SRC) Makefile 
-	clang main.c $(DEBUG_FLAGS) $(WARN_FLAGS) -std=$(STD) $(MAX_ERRORS_CLANG) -c
-	clang main.o $(DEBUG_FLAGS) $(WARN_FLAGS) -std=$(STD) $(MAX_ERRORS_CLANG) -o main
+ifeq ($(CC), gcc)
+	CFLAGS+=$(GCC_FLAGS)
+endif
+ifeq ($(CC), clang)
+	CFLAGS+=$(CLANG_FLAGS)
+endif
 
-main_release: $(SRC) Makefile 
-	clang main.c $(RELEASE_FLAGS) $(WARN_FLAGS) -std=$(STD) $(MAX_ERRORS_CLANG) -o main_release
+main: main.o $(SRC) Makefile 
+	$(CC) main.o $(DEBUG_FLAGS) $(CFLAGS) -o main
+
+main.o: $(SRC) Makefile 
+	$(CC) main.c $(DEBUG_FLAGS) $(CFLAGS) -c -o main.o
+
+release: $(SRC) Makefile 
+	$(CC) main.c $(RELEASE_FLAGS) $(CFLAGS) -std=$(STD) -o release
 
 run: main
 	./main
 
-run_release: main_release
-	./main_release
+run_release: release
+	./release
 
 clean:
 	if [ -e main ]; then trash main; fi
 	if [ -e main_release ]; then trash main_release; fi
+	if [ -e release ]; then trash release; fi
 	if [ -e *.dSYM ]; then trash *.dSYM; fi
 	if [ -e a.out.c ]; then trash a.out.c; fi
 	if [ -e *.o ]; then trash *.o; fi

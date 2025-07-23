@@ -275,7 +275,7 @@ blok_Obj blok_reader_read_file(blok_State * s, blok_Arena * a, char const * path
     //size_t len = strlen(path);
     //char * path_copy = blok_arena_alloc(a, len + 1);
     //strncpy(path_copy, path, len);
-    strncpy(r.src_info.file, path, sizeof(r.src_info.file));
+    strncpy(r.src_info.file, path, sizeof(r.src_info.file) - 1 );
     r.src_info.line = 1;
 
     if(r.fp == NULL) {

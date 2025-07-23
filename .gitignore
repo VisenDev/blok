@@ -5,6 +5,7 @@ main
 main_release
 a.out.c
 profile.json
+release
 
 # Prerequisites
 *.d
