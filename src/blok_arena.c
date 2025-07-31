@@ -7,6 +7,10 @@
 #include <stdbool.h>
 #include <string.h>
 
+#define LOG(...) do { fprintf(stderr, __VA_ARGS__); fflush(stderr); } while (0)
+#define UNREACHABLE do { LOG("Unreachable code block reached! Aborting..."); abort(); } while (0);
+#define TODO(msg) do { LOG("%s:%d:    TODO\n   " msg "\n", __FILE__, __LINE__); abort(); } while(0)
+
 #include "blok_profiler.c"
 
 typedef struct {

@@ -307,6 +307,13 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bi
     BLOK_LOG("args are valid!\n");
 }
 
+void blok_compiler_compile_primive_let(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+    TODO("finish");
+    //blok_Binding b = (blok_Binding) {
+        .
+
+}
+
 void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, const blok_Primitive * p, blok_ListRef args, FILE * output) {
     //blok_Primitive * p = blok_primitive_from_obj(prim);
     blok_FunctionSignature sig = p->signature;
@@ -317,14 +324,17 @@ void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, cons
     blok_compiler_typecheck_args(s, src, globals, sig, args);
     (void)globals;
     (void)output;
-    //TODO implement the primitives
-//    switch(prim) {
-//        case BLOK_PRIMITIVE_LET:
-//            blok_fatal_error(NULL, "TODO");
-//        case BLOK_PRIMITIVE_PROCEDURE:
-//            blok_compiler_primitive_procedure(s, globals, args, output);
-//
-    //}
+    TODO("implement primitives");
+    switch(p->tag) {
+        case BLOK_PRIMITIVE_LET:
+            blok_compiler_compile_primive_let(s, globals, args, output);
+        case BLOK_PRIMITIVE_PRINT_INT:
+            TODO("");
+        case BLOK_PRIMITIVE_PROCEDURE:
+            TODO("");
+        case BLOK_PRIMITIVE_RETURN:
+            TODO("");
+    }
 }
 
 void blok_compiler_apply_function(blok_State * s, blok_Bindings * globals, blok_Obj fn, blok_ListRef args, FILE * output) {
