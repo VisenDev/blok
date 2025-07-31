@@ -218,7 +218,8 @@ blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo
     blok_Binding * it = NULL;
     blok_vec_find(it, bindings, sym == it->name);
     if(it == NULL) {
-        blok_fatal_error(src, "Unbound symbol");
+        blok_SymbolData data = blok_symbol_get_data(s, sym);
+        blok_fatal_error(src, "Unbound symbol: %s", data.buf);
     } else {
         return it->type;
     }
@@ -307,10 +308,55 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bi
     BLOK_LOG("args are valid!\n");
 }
 
+blok_Obj blok_evaluator_eval(blok_State * s, blok_Bindings * globals, blok_Obj obj) {
+    (void)s;
+    (void)globals;
+    switch(obj.tag) {
+        case BLOK_TAG_BOOL:
+        case BLOK_TAG_INT:
+        case BLOK_TAG_NIL:
+            return obj;
+        default:
+            TODO("implement evaluation for other types");
+    }
+}
+
 void blok_compiler_compile_primive_let(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
-    TODO("finish");
-    //blok_Binding b = (blok_Binding) {
-        .
+    assert(args.len == 2);
+    blok_Symbol name = blok_symbol_from_obj(args.ptr[0]);
+    blok_Binding b = (blok_Binding) {
+        .name = name,
+        .type = blok_compiler_infer_typeof_expr(s, NULL, globals, args.ptr[1]),
+        .value = blok_evaluator_eval(s, globals, args.ptr[1]),
+    };
+    blok_Binding * it = NULL;
+    blok_vec_find(it, globals, it->name == name);
+    if(it != NULL) {
+        blok_fatal_error(&args.ptr[0].src_info, "multiply defined symbol");
+    }
+    blok_vec_append(globals, &s->persistent_arena, b);
+    (void) output;
+}
+
+void blok_compiler_compile_type(blok_State * s, blok_TypeData t, FILE * output) {
+    switch(t.tag) {
+        case BLOK_TYPETAG_VOID:
+            TODO("finish");
+        default: TODO("");
+    }
+
+}
+
+void blok_compiler_compile_primitive_procedure(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+    assert(args.len >= 3);
+    //blok_Symbol return_type_name = blok_symbol_from_obj(args.ptr[0]);
+    blok_Obj return_type_obj = blok_evaluator_eval(s, globals, args.ptr[0]); 
+    blok_Type return_type = return_type_obj.as.data;
+    blok_TypeData return_type_data = blok_type_get_data(s, return_type);
+
+    blok_Symbol name = blok_symbol_from_obj(args.ptr[1]);
+    blok_List * params = blok_list_from_obj(args.ptr[2]);
+    fprintf(
 
 }
 
@@ -324,16 +370,19 @@ void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, cons
     blok_compiler_typecheck_args(s, src, globals, sig, args);
     (void)globals;
     (void)output;
-    TODO("implement primitives");
     switch(p->tag) {
         case BLOK_PRIMITIVE_LET:
             blok_compiler_compile_primive_let(s, globals, args, output);
+            break;
         case BLOK_PRIMITIVE_PRINT_INT:
             TODO("");
+            break;
         case BLOK_PRIMITIVE_PROCEDURE:
             TODO("");
+            break;
         case BLOK_PRIMITIVE_RETURN:
             TODO("");
+            break;
     }
 }
 
