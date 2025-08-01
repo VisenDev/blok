@@ -265,7 +265,7 @@ typedef struct {
     blok_Vec(blok_Arena) arenas;
 
     blok_Primitives toplevel_primitives;
-    blok_Bindings local_builtins;
+    blok_Bindings builtins;
 
     //Compilation specific 
     FILE * out;
