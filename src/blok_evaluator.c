@@ -6,20 +6,7 @@
 
 #include <ctype.h>
 
-
-//struct blok_State {
-//    blok_Arena persistent_arena;
-//    blok_Vec(blok_TypeData) types; 
-//    blok_Vec(blok_SymbolData) symbols;
-//    blok_Vec(blok_Arena) arenas;
-//
-//    blok_Primitives toplevel_primitives;
-//    blok_Bindings builtins;
-//
-//    //Compilation specific 
-//    FILE * out;
-//    blok_Bindings globals;
-//};
+#define CODEGEN_INDENT(blok_state) do { for(int i = 0; i < (blok_state)->indent; fprintf((blok_state)->out, "    "), ++i); } while (0)
 
 blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value);
 
@@ -461,12 +448,15 @@ void blok_compiler_codegen_expression(blok_State * s, blok_Obj expr) {
 
 void blok_compiler_codegen_when(blok_State *s, blok_ListRef args) {
     assert(args.len >= 2);
+    CODEGEN_INDENT(s);
     fprintf(s->out, "if (");
     blok_compiler_codegen_expression(s, args.ptr[0]);
     fprintf(s->out, ") {\n");
+    s->indent++;
     for(int i = 1; i < args.len; ++i) {
         blok_compiler_codegen_statement(s, args.ptr[i]);
     }
+    s->indent--;
     fprintf(s->out, "}");
 }
 
@@ -506,12 +496,14 @@ void blok_compiler_codegen_statement(blok_State * s, blok_Obj statement) {
 
 void blok_compiler_codegen_body(blok_State * s, blok_ListRef args) {
     fprintf(s->out, "{\n");
+    s->indent++;
     for(blok_Obj * obj = args.ptr; obj < args.ptr + args.len; ++obj) {
         if(obj->tag != BLOK_TAG_LIST) {
             blok_fatal_error(&obj->src_info, "Expected list");
         }
         blok_compiler_codegen_statement(s, *obj);
     }
+    s->indent--;
     fprintf(s->out, "}\n");
 }
 

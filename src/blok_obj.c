@@ -190,10 +190,9 @@ typedef struct {
     blok_SourceInfo src_info;
 } blok_Obj;
 
-
 typedef blok_Slice(blok_Obj) blok_ListRef;
 typedef struct { blok_ListRef items; int32_t cap; blok_Obj _item;} blok_List;
-_Static_assert(sizeof(blok_List) == sizeof(blok_Vec(blok_Obj)), "invalid");
+STATIC_ASSERT(sizeof(blok_List) == sizeof(blok_Vec(blok_Obj)), correct_vec_structure);
 typedef blok_Vec(char) blok_String;
 
 typedef enum {
@@ -276,6 +275,7 @@ typedef struct {
     FILE * out;
     blok_Primitives toplevel_primitives;
     blok_Bindings globals;
+    int indent;
 } blok_State;
 
 

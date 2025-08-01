@@ -1,4 +1,4 @@
-CC=gcc
+CC=clang
 MAX_ERRORS=3
 GCC_FLAGS=--max-errors=${MAX_ERRORS}
 CLANG_FLAGS=-ferror-limit=${MAX_ERRORS}
