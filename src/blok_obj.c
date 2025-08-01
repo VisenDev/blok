@@ -87,6 +87,7 @@ typedef enum {
 
     /*FUNCTION POINTERS*/
     BLOK_TYPETAG_FUNCTION,
+    BLOK_TYPETAG_PRIMITIVE,
 
     /*EMPTY TYPE*/
     BLOK_TYPETAG_VOID,
@@ -135,13 +136,13 @@ typedef struct {
 } blok_ParamType;
 
 #define BLOK_PARAMETER_COUNT_MAX 8
-typedef struct blok_FunctionSignature {
+typedef struct blok_Signature {
     blok_Type return_type;
     blok_ParamType params[BLOK_PARAMETER_COUNT_MAX];
     int32_t param_count;
     bool variadic;
     blok_ParamType variadic_args_type;
-} blok_FunctionSignature;
+} blok_Signature;
 
 typedef struct blok_TypeData {
     blok_TypeTag tag; 
@@ -150,7 +151,8 @@ typedef struct blok_TypeData {
         blok_UnionType union_;
         blok_StructType struct_;
         blok_OptionalType optional;
-        blok_FunctionSignature function;
+        blok_Signature function;
+        blok_Signature primitive;
     } as;
 } blok_TypeData;
 
@@ -189,8 +191,9 @@ typedef struct {
 } blok_Obj;
 
 
-typedef blok_Vec(blok_Obj) blok_List;
 typedef blok_Slice(blok_Obj) blok_ListRef;
+typedef struct { blok_ListRef items; int32_t cap; blok_Obj _item;} blok_List;
+_Static_assert(sizeof(blok_List) == sizeof(blok_Vec(blok_Obj)), "invalid");
 typedef blok_Vec(char) blok_String;
 
 typedef enum {
@@ -215,7 +218,7 @@ bool blok_paramtype_equal(blok_ParamType l, blok_ParamType r) {
     return l.type == r.type && l.noeval == r.noeval;
 }
 
-bool blok_functionsignature_equal(blok_FunctionSignature l, const blok_FunctionSignature r) {
+bool blok_functionsignature_equal(blok_Signature l, const blok_Signature r) {
     if(l.return_type != r.return_type) return false;
     if(l.param_count != r.param_count) return false;
     if(l.variadic != r.variadic) return false;
@@ -229,7 +232,7 @@ bool blok_functionsignature_equal(blok_FunctionSignature l, const blok_FunctionS
 
 typedef struct {
     //blok_Arena * arena;
-    blok_FunctionSignature signature;
+    blok_Type signature;
     blok_List * params;
     blok_List * body;
 } blok_Function;
@@ -244,16 +247,17 @@ typedef blok_Vec(blok_KeyValue) blok_AList;
 typedef blok_Vec(blok_Binding) blok_Bindings;
 
 typedef enum {
-    BLOK_PRIMITIVE_LET,
-    BLOK_PRIMITIVE_PROCEDURE,
+    BLOK_PRIMITIVE_TOPLEVEL_LET,
+    BLOK_PRIMITIVE_TOPLEVEL_PROCEDURE,
     BLOK_PRIMITIVE_PRINT_INT,
-    BLOK_PRIMITIVE_RETURN
+    BLOK_PRIMITIVE_RETURN,
+    BLOK_PRIMITIVE_WHEN,
 } blok_PrimitiveTag;
 
 typedef struct {
     blok_Symbol name;
     blok_PrimitiveTag tag;
-    blok_FunctionSignature signature;
+    blok_Type signature;
 } blok_Primitive;
 
 typedef blok_Vec(blok_Primitive) blok_Primitives;
@@ -316,6 +320,25 @@ blok_TypeData blok_type_get_data(const blok_State * s, blok_Type id) {
     return blok_slice_get(s->types.items, id - 1);
 }
 
+//bool blok_paramtype_equal(blok_ParamType lhs, blok_ParamType rhs) {
+//    if(lhs.type != rhs.type) return false;
+//    if(lhs.type != rhs.type) return false;
+//    return true; 
+//}
+
+bool blok_signature_equal(blok_Signature lhs, blok_Signature rhs) {
+    if(lhs.param_count != rhs.param_count) return false;
+    if(lhs.return_type != rhs.return_type) return false;
+    if(lhs.variadic != rhs.variadic) return false;
+    if(lhs.variadic) {
+        if(!blok_paramtype_equal(lhs.variadic_args_type, rhs.variadic_args_type)) return false;
+    }
+    for(int i = 0; i < lhs.param_count; ++i) {
+        if(!blok_paramtype_equal(lhs.params[i], rhs.params[i])) return false;
+    }
+    return true;
+}
+
 bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
     if(lhs.tag != rhs.tag) return false;
 
@@ -329,8 +352,11 @@ bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
         case BLOK_TYPETAG_OBJ:
         case BLOK_TYPETAG_TYPE:
         case BLOK_TYPETAG_SYMBOL:
-        case BLOK_TYPETAG_FUNCTION:
             return true;
+        case BLOK_TYPETAG_FUNCTION:
+            return blok_signature_equal(lhs.as.function, rhs.as.function);
+        case BLOK_TYPETAG_PRIMITIVE:
+            return blok_signature_equal(lhs.as.primitive, rhs.as.primitive);
         case BLOK_TYPETAG_LIST:
             return lhs.as.list.item_type == rhs.as.list.item_type;
         case BLOK_TYPETAG_OPTIONAL:
@@ -368,7 +394,7 @@ bool blok_typedata_equal(blok_TypeData lhs, blok_TypeData rhs) {
     return false;
 }
 
-blok_Symbol blok_typedata_intern(blok_State * s, blok_TypeData type) {
+blok_Type blok_typedata_intern(blok_State * s, blok_TypeData type) {
     for(blok_Type i = 0; i < s->types.items.len; ++i) {
         if(blok_typedata_equal(type, blok_slice_get(s->types.items, i))) {
             return i + 1;
@@ -376,6 +402,14 @@ blok_Symbol blok_typedata_intern(blok_State * s, blok_TypeData type) {
     }
     blok_vec_append(&s->types, &s->persistent_arena, type);
     return s->types.items.len;
+}
+
+blok_Type blok_primitive_signature_intern(blok_State * s, blok_Signature sig) {
+    //blok_TypeData * t = blok_arena_alloc(&s->persistent_arena, sizeof(blok_TypeData));
+    blok_TypeData t = {0};
+    t.tag = BLOK_TYPETAG_PRIMITIVE;
+    t.as.primitive = sig;
+    return blok_typedata_intern(s, t);
 }
 
 blok_Type blok_type_void(blok_State * s) {
