@@ -266,6 +266,10 @@ typedef struct {
 
     blok_Primitives toplevel_primitives;
     blok_Bindings local_builtins;
+
+    //Compilation specific 
+    FILE * out;
+    blok_Bindings globals;
 } blok_State;
 
 

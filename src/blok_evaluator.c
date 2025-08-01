@@ -32,6 +32,10 @@ void blok_state_bind_toplevel_primitive(blok_State * s, blok_Primitive prim) {
     blok_vec_append(&s->toplevel_primitives, &s->persistent_arena, prim);
 }
 
+void blok_state_bind_local_builtin(blok_State * s, blok_Primitive prim) {
+
+}
+
 blok_State blok_state_init(void) {
     blok_State result = {0};
     blok_State * s = &result;
@@ -194,13 +198,13 @@ blok_Type blok_compiler_infer_typeof_value(blok_State * s, blok_Obj value) {
     }
 }
 
-blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Obj sexpr) {
+blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo * src, blok_Obj sexpr) {
     blok_compiler_validate_sexpr(s, sexpr);
     blok_List * l = blok_list_from_obj(sexpr);
     blok_Obj head_obj = l->items.ptr[0];
     blok_Symbol head = head_obj.as.data;
     blok_Binding * it = NULL;
-    blok_vec_find(it, bindings, head == it->name);
+    blok_vec_find(it, &s->globals, head == it->name);
     if(it == NULL) {
         blok_fatal_error(src, "Unbound symbol");
     } else {
@@ -213,10 +217,10 @@ blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo *
     }
 }
 
-blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Symbol sym) {
+blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo * src, blok_Symbol sym) {
     (void) s;
     blok_Binding * it = NULL;
-    blok_vec_find(it, bindings, sym == it->name);
+    blok_vec_find(it, &s->globals, sym == it->name);
     if(it == NULL) {
         blok_SymbolData data = blok_symbol_get_data(s, sym);
         blok_fatal_error(src, "Unbound symbol: %s", data.buf);
@@ -226,7 +230,7 @@ blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo
 }
 
 //NOTE, an expr means it is evaluated, a value means it is not
-blok_Type blok_compiler_infer_typeof_expr(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_Obj expr) {
+blok_Type blok_compiler_infer_typeof_expr(blok_State * s, blok_SourceInfo * src, blok_Obj expr) {
     switch(expr.tag) {
         case BLOK_TAG_NIL:
             return blok_type_void(s);
@@ -239,9 +243,9 @@ blok_Type blok_compiler_infer_typeof_expr(blok_State * s, blok_SourceInfo * src,
         case BLOK_TAG_STRING:
             return blok_type_string(s);
         case BLOK_TAG_SYMBOL:
-            return blok_compiler_infer_typeof_expr_symbol(s, src, bindings, expr.as.data);
+            return blok_compiler_infer_typeof_expr_symbol(s, src, expr.as.data);
         case BLOK_TAG_LIST:
-            return blok_compiler_infer_typeof_expr_list(s, src, bindings, expr);
+            return blok_compiler_infer_typeof_expr_list(s, src, expr);
         default:
             blok_fatal_error(NULL, "TODO: implement type inference for these types");
     }
@@ -276,22 +280,22 @@ void blok_compiler_typecheck_value(blok_State * s, blok_SourceInfo * src, blok_T
     }
 }
 
-void blok_compiler_typecheck_expr(blok_State * s,  blok_SourceInfo * src, blok_Bindings * bindings, blok_Type type, blok_Obj expr) {
-    blok_Type value_type = blok_compiler_infer_typeof_expr(s, src, bindings, expr);
+void blok_compiler_typecheck_expr(blok_State * s,  blok_SourceInfo * src, blok_Type type, blok_Obj expr) {
+    blok_Type value_type = blok_compiler_infer_typeof_expr(s, src, expr);
     if(!blok_compiler_type_coercible(s, type, value_type)) {
         blok_fatal_error(src, "Type mismatch");
     }
 }
 
-void blok_compiler_typecheck_arg(blok_State *s, blok_SourceInfo * src, blok_Bindings * bindings, blok_ParamType type, blok_Obj arg) {
+void blok_compiler_typecheck_arg(blok_State *s, blok_SourceInfo * src, blok_ParamType type, blok_Obj arg) {
     if(type.noeval) {
         blok_compiler_typecheck_value(s, src, type.type, arg);
     } else {
-        blok_compiler_typecheck_expr(s, src, bindings, type.type, arg);
+        blok_compiler_typecheck_expr(s, src, type.type, arg);
     }
 }
 
-void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bindings * bindings, blok_FunctionSignature sig, blok_ListRef args) {
+void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_FunctionSignature sig, blok_ListRef args) {
     if(sig.param_count > args.len) {
         blok_fatal_error(src, "Incorrect number of arguments, expected at least %d arguments, found %d arguments", sig.param_count, args.len);
     }
@@ -299,86 +303,113 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Bi
         blok_fatal_error(src, "Incorrect number of arguments, expected at %d arguments, found %d arguments", sig.param_count, args.len);
     }
     for(int i = 0; i < sig.param_count; ++i) {
-        blok_compiler_typecheck_arg(s, src, bindings, sig.params[i], args.ptr[i]);
+        blok_compiler_typecheck_arg(s, src, sig.params[i], args.ptr[i]);
     }
     for(int i = sig.param_count; i < args.len; ++i) {
-        blok_compiler_typecheck_arg(s, src, bindings, sig.variadic_args_type, args.ptr[i]);
+        blok_compiler_typecheck_arg(s, src, sig.variadic_args_type, args.ptr[i]);
     }
 
     BLOK_LOG("args are valid!\n");
 }
 
-blok_Obj blok_evaluator_eval(blok_State * s, blok_Bindings * globals, blok_Obj obj) {
+blok_Obj blok_evaluator_eval(blok_State * s, blok_Obj obj) {
     (void)s;
-    (void)globals;
     switch(obj.tag) {
         case BLOK_TAG_BOOL:
         case BLOK_TAG_INT:
         case BLOK_TAG_NIL:
             return obj;
         default:
+            LOG("%s", blok_tag_get_name(obj.tag));
             TODO("implement evaluation for other types");
     }
 }
 
-void blok_compiler_compile_primive_let(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
+void blok_compiler_compile_primive_let(blok_State * s, blok_ListRef args) {
     assert(args.len == 2);
     blok_Symbol name = blok_symbol_from_obj(args.ptr[0]);
     blok_Binding b = (blok_Binding) {
         .name = name,
-        .type = blok_compiler_infer_typeof_expr(s, NULL, globals, args.ptr[1]),
-        .value = blok_evaluator_eval(s, globals, args.ptr[1]),
+        .type = blok_compiler_infer_typeof_expr(s, &args.ptr[0].src_info, args.ptr[1]),
+        .value = blok_evaluator_eval(s, args.ptr[1]),
     };
     blok_Binding * it = NULL;
-    blok_vec_find(it, globals, it->name == name);
+    blok_vec_find(it, &s->globals, it->name == name);
     if(it != NULL) {
         blok_fatal_error(&args.ptr[0].src_info, "multiply defined symbol");
     }
-    blok_vec_append(globals, &s->persistent_arena, b);
-    (void) output;
+    blok_vec_append(&s->globals, &s->persistent_arena, b);
 }
 
-void blok_compiler_compile_type(blok_State * s, blok_TypeData t, FILE * output) {
+void blok_compiler_codegen_type(blok_State * s, blok_Type type) {
+    blok_TypeData t = blok_type_get_data(s, type);
     switch(t.tag) {
         case BLOK_TYPETAG_VOID:
-            TODO("finish");
+            fprintf(s->out, "void");
+            break;
+        case BLOK_TYPETAG_BOOL:
+            fprintf(s->out, "_Bool");
+            break;
+        case BLOK_TYPETAG_INT:
+            fprintf(s->out, "long");
+            break;
+        case BLOK_TYPETAG_NIL:
+            fprintf(s->out, "_Bool");
+            break;
         default: TODO("");
     }
 
 }
 
-void blok_compiler_compile_primitive_procedure(blok_State * s, blok_Bindings * globals, blok_ListRef args, FILE * output) {
-    assert(args.len >= 3);
-    //blok_Symbol return_type_name = blok_symbol_from_obj(args.ptr[0]);
-    blok_Obj return_type_obj = blok_evaluator_eval(s, globals, args.ptr[0]); 
-    blok_Type return_type = return_type_obj.as.data;
-    blok_TypeData return_type_data = blok_type_get_data(s, return_type);
-
-    blok_Symbol name = blok_symbol_from_obj(args.ptr[1]);
-    blok_List * params = blok_list_from_obj(args.ptr[2]);
-    fprintf(
-
+void blok_compiler_codegen_identifier(blok_State * s, blok_Symbol symbol) {
+    blok_SymbolData sym = blok_symbol_get_data(s, symbol);
+    fprintf(s->out, "%s", sym.buf);
 }
 
-void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, const blok_Primitive * p, blok_ListRef args, FILE * output) {
+void blok_compiler_codegen_params(blok_State * s, blok_List * p) {
+    //blok_ListRef params = params_list->items;
+    fprintf(s->out, "(");
+    for(blok_Obj * obj = p->items.ptr; obj < p->items.ptr + p->items.len; ++obj) {
+        if(obj->tag != BLOK_TAG_LIST) {
+            blok_fatal_error(&obj->src_info, "Expected list");
+        }
+    }
+    fprintf(s->out, ")");
+    TODO("finish implementation");
+}
+
+void blok_compiler_compile_primitive_procedure(blok_State * s, blok_ListRef args) {
+    assert(args.len >= 3);
+    //blok_Symbol return_type_name = blok_symbol_from_obj(args.ptr[0]);
+    blok_Obj return_type_obj = blok_evaluator_eval(s, args.ptr[0]); 
+    blok_Type return_type = return_type_obj.as.data;
+    //blok_TypeData return_type_data = blok_type_get_data(s, return_type);
+    blok_Symbol name = blok_symbol_from_obj(args.ptr[1]);
+    blok_List * params = blok_list_from_obj(args.ptr[2]);
+
+    blok_compiler_codegen_type(s, return_type);
+    fprintf(s->out, " ");
+    blok_compiler_codegen_identifier(s, name);
+    blok_compiler_codegen_params(s, params);
+}
+
+void blok_compiler_apply_primitive(blok_State * s, const blok_Primitive * p, blok_ListRef args) {
     //blok_Primitive * p = blok_primitive_from_obj(prim);
     blok_FunctionSignature sig = p->signature;
     blok_SourceInfo * src = NULL;
     if(args.len > 0) {
         src = &args.ptr[0].src_info;
     }
-    blok_compiler_typecheck_args(s, src, globals, sig, args);
-    (void)globals;
-    (void)output;
+    blok_compiler_typecheck_args(s, src, sig, args);
     switch(p->tag) {
         case BLOK_PRIMITIVE_LET:
-            blok_compiler_compile_primive_let(s, globals, args, output);
+            blok_compiler_compile_primive_let(s, args);
             break;
         case BLOK_PRIMITIVE_PRINT_INT:
             TODO("");
             break;
         case BLOK_PRIMITIVE_PROCEDURE:
-            TODO("");
+            blok_compiler_compile_primitive_procedure(s, args);
             break;
         case BLOK_PRIMITIVE_RETURN:
             TODO("");
@@ -386,14 +417,13 @@ void blok_compiler_apply_primitive(blok_State * s, blok_Bindings * globals, cons
     }
 }
 
-void blok_compiler_apply_function(blok_State * s, blok_Bindings * globals, blok_Obj fn, blok_ListRef args, FILE * output) {
+void blok_compiler_apply_function(blok_State * s, blok_Obj fn, blok_ListRef args) {
     blok_Function * f = blok_function_from_obj(fn);
     blok_FunctionSignature sig = f->signature;
-    blok_compiler_typecheck_args(s, &fn.src_info, globals, sig, args);
-    (void)output;
+    blok_compiler_typecheck_args(s, &fn.src_info, sig, args);
 }
 
-void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_Obj sexpr, FILE * output) {
+void blok_compiler_toplevel_sexpr(blok_State * s, blok_Obj sexpr) {
         blok_List * sexpr_list = blok_list_from_obj(sexpr);
         blok_ListRef args = blok_slice_tail(sexpr_list->items, 1);
         blok_Symbol head = blok_symbol_from_obj(sexpr_list->items.ptr[0]);
@@ -404,7 +434,7 @@ void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_
             blok_SymbolData data = blok_symbol_get_data(s, head);
             blok_fatal_error(&sexpr.src_info, "Unknown toplevel symbol: %s", data.buf);
         } else {
-            blok_compiler_apply_primitive(s, globals, it, args, output);
+            blok_compiler_apply_primitive(s, it, args);
             //blok_Obj head_value = it->value;
             //if(head_value.tag == BLOK_TAG_PRIMITIVE) {
             //    blok_compiler_apply_primitive(s, globals, head_value, args, output);
@@ -417,9 +447,7 @@ void blok_compiler_toplevel_sexpr(blok_State * s, blok_Bindings * globals, blok_
 }
 
 //returns a table of globals
-blok_Bindings blok_compiler_toplevel(blok_State * s, blok_List * toplevel, FILE * output) {
-    (void) output;
-    blok_Bindings globals = {0};
+blok_Bindings blok_compiler_toplevel(blok_State * s, blok_List * toplevel) {
     for(int32_t i = 0; i < toplevel->items.len; ++i) {
         blok_Obj sexpr = toplevel->items.ptr[i];
         {
@@ -428,9 +456,9 @@ blok_Bindings blok_compiler_toplevel(blok_State * s, blok_List * toplevel, FILE 
             printf("\n");
         }
         blok_compiler_validate_sexpr(s, sexpr);
-        blok_compiler_toplevel_sexpr(s, &globals, sexpr, output);
+        blok_compiler_toplevel_sexpr(s, sexpr);
     }
-    return globals;
+    return s->globals;
 }
 
 #endif /*BLOK_EVALUATOR_C*/

@@ -16,10 +16,9 @@ int main(void) {
     puts("\n");
     fflush(stdout);
 
-    FILE * output = fopen("a.out.c", "w");
-    //blok_evaluator_toplevel(&s, blok_list_from_obj(source), output);
-    blok_compiler_toplevel(&s, blok_list_from_obj(source), output);
-    fclose(output);
+    s.out = fopen("a.out.c", "w");
+    blok_compiler_toplevel(&s, blok_list_from_obj(source));
+    fclose(s.out);
 
     blok_state_deinit(&s);
     blok_profiler_deinit();
