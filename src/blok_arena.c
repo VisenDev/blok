@@ -8,8 +8,8 @@
 #include <string.h>
 
 #define LOG(...) do { fprintf(stderr, __VA_ARGS__); fflush(stderr); } while (0)
-#define UNREACHABLE do { LOG("Unreachable code block reached! Aborting..."); abort(); } while (0);
-#define TODO(msg) do { LOG("%s:%d:    TODO\n   " msg "\n", __FILE__, __LINE__); abort(); } while(0)
+#define UNREACHABLE do { LOG("Unreachable code block reached! Aborting..."); exit(1); } while (0);
+#define TODO(msg) do { LOG("\n\nTODO\n    %s:%d::\n" msg "\n", __FILE__, __LINE__); exit(1); } while(0)
 
 #include "blok_profiler.c"
 

@@ -23,7 +23,7 @@ BLOK_NORETURN
 void blok_abort(void) {
     fflush(stdout);
     fflush(stderr);
-    abort();
+    exit(1);
 }
 
 typedef struct {
@@ -264,11 +264,13 @@ typedef struct {
     blok_Vec(blok_SymbolData) symbols;
     blok_Vec(blok_Arena) arenas;
 
-    blok_Primitives toplevel_primitives;
-    blok_Bindings builtins;
-
+    //blok_Bindings builtins;
     //Compilation specific 
+    
+    
+    
     FILE * out;
+    blok_Primitives toplevel_primitives;
     blok_Bindings globals;
 } blok_State;
 
@@ -451,6 +453,7 @@ blok_Obj blok_obj_from_keyvalue(blok_KeyValue* l) { return blok_obj_from_ptr(l, 
 blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLOK_TAG_STRING); }
 blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
 blok_Obj blok_obj_from_primitive(blok_Primitive * f) { return blok_obj_from_ptr(f, BLOK_TAG_PRIMITIVE); }
+blok_Obj blok_obj_from_type(blok_Type t) { return (blok_Obj){.tag = BLOK_TAG_TYPE, .as.data = t}; }
 
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .as.data = data};
@@ -530,6 +533,11 @@ blok_Primitive * blok_primitive_from_obj(blok_Obj obj) {
 
 blok_Symbol blok_symbol_from_obj(blok_Obj obj) {
     assert(obj.tag == BLOK_TAG_SYMBOL);
+    return obj.as.data;
+}
+
+blok_Type blok_type_from_obj(blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_TYPE);
     return obj.as.data;
 }
 

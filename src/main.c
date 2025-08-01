@@ -3,6 +3,12 @@
 #include "blok_evaluator.c"
 #include "blok_profiler.c"
 
+FILE * out = NULL;
+
+void close_output(void) {
+    fclose(out);
+}
+
 int main(void) {
     blok_profiler_init("profile.json");
 
@@ -17,8 +23,11 @@ int main(void) {
     fflush(stdout);
 
     s.out = fopen("a.out.c", "w");
+    out = s.out;
+    atexit(close_output);
+
     blok_compiler_toplevel(&s, blok_list_from_obj(source));
-    fclose(s.out);
+    //fclose(s.out);
 
     blok_state_deinit(&s);
     blok_profiler_deinit();
