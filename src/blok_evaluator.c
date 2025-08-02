@@ -20,6 +20,7 @@ void blok_state_bind_toplevel_primitive(blok_State * s, blok_Primitive prim) {
     blok_vec_append(&s->toplevel_primitives, &s->persistent_arena, prim);
 }
 
+
 void blok_state_create_global(blok_State * s, const char * symbol, blok_Obj obj) {
     blok_Binding * it = NULL;
     const blok_Symbol name = blok_symbol_from_string(s, symbol);
@@ -33,6 +34,12 @@ void blok_state_create_global(blok_State * s, const char * symbol, blok_Obj obj)
         .value = obj,
     };
     blok_vec_append(&s->globals, &s->persistent_arena, binding);
+}
+
+void blok_state_create_global_primitive(blok_State * s, blok_Primitive prim) {
+    blok_Primitive * mem = blok_arena_alloc(&s->persistent_arena, sizeof(blok_Primitive));
+    *mem = prim;
+    blok_state_create_global(s, blok_symbol_get_data(s, prim.name).buf, blok_obj_from_primitive(mem));
 }
 
 bool blok_state_lookup(blok_State * s, blok_Symbol sym, blok_Obj * result) {
@@ -69,8 +76,8 @@ blok_State blok_state_init(void) {
         })
     });
 
-    blok_Primitive * when = blok_arena_alloc(&s->persistent_arena, sizeof(blok_Primitive));
-    *when = (blok_Primitive){
+    //blok_Primitive * when = blok_arena_alloc(&s->persistent_arena, sizeof(blok_Primitive));
+    blok_state_create_global_primitive(s, (blok_Primitive){
         .name = blok_symbol_from_string(s, "#when"),
         .tag = BLOK_PRIMITIVE_WHEN,
         .signature = blok_primitive_signature_intern(s, (blok_Signature){
@@ -82,8 +89,19 @@ blok_State blok_state_init(void) {
             .variadic = true,
             .variadic_args_type = (blok_ParamType){.type = blok_type_obj(s), .noeval = true},
         })
-    };
-    blok_state_create_global(s, "#when", blok_obj_from_primitive(when));
+    });
+    blok_state_create_global_primitive(s, (blok_Primitive){
+        .name = blok_symbol_from_string(s, "#expr"),
+        .tag = BLOK_PRIMITIVE_EXPR,
+        .signature = blok_primitive_signature_intern(s, (blok_Signature){
+            .return_type = blok_type_bool(s),
+            .variadic = true,
+            .variadic_args_type = (blok_ParamType){.type = blok_type_obj(s), .noeval = true},
+        })
+    });
+    //};
+    //
+    //blok_state_create_global(s, "#when", blok_obj_from_primitive(when));
 
    blok_state_bind_toplevel_primitive(s, (blok_Primitive){
        .name = blok_symbol_from_string(s, "#procedure"),
@@ -240,6 +258,8 @@ blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo *
         blok_TypeData type_data = blok_type_get_data(s, it->type);
         if(type_data.tag == BLOK_TYPETAG_FUNCTION) {
             return type_data.as.function.return_type;
+        } else if(type_data.tag == BLOK_TYPETAG_PRIMITIVE) {
+            return type_data.as.primitive.return_type;
         } else {
             blok_fatal_error(src, "Expected function");
         }
@@ -439,17 +459,66 @@ void blok_compiler_codegen_params(blok_State * s, blok_List * p) {
 
 
 void blok_compiler_codegen_statement(blok_State * s, blok_Obj statement);
+void blok_compiler_codegen_primitive(blok_State *s, const blok_Primitive * prim, blok_ListRef args);
+
+
+void blok_compiler_codegen_function_call(blok_State * s, blok_Function * fn, blok_ListRef args) {
+    (void)s;
+    (void)fn;
+    (void)args;
+    TODO("codegen function call");
+}
+
+void blok_compiler_codegen_expression_list(blok_State * s, blok_Obj sexpr) {
+    blok_List * l = blok_list_from_obj(sexpr);
+    if(l->items.len <= 0) {
+        blok_fatal_error(&sexpr.src_info, "Empty expression");
+    }
+    blok_Obj sexpr_head = {0};
+    blok_ListRef args = blok_slice_tail(l->items, 1);
+    blok_state_lookup(s, blok_symbol_from_obj(l->items.ptr[0]), &sexpr_head);
+    if(sexpr_head.tag == BLOK_TAG_PRIMITIVE) {
+        blok_compiler_codegen_primitive(s, blok_primitive_from_obj(sexpr_head), args);
+    } else if(sexpr_head.tag == BLOK_TAG_FUNCTION) {
+        blok_compiler_codegen_function_call(s, blok_function_from_obj(sexpr_head), args);
+    } else {
+        blok_fatal_error(&sexpr.src_info, "Invalid s-expression head");
+    }
+}
 
 void blok_compiler_codegen_expression(blok_State * s, blok_Obj expr) {
-    (void)s;
-    (void)expr;
+    blok_Type t = blok_compiler_infer_typeof_expr(s, &expr.src_info, expr);
+    blok_TypeData td = blok_type_get_data(s, t);
+    if(td.tag == BLOK_TYPETAG_VOID) {
+        blok_fatal_error(&expr.src_info, "provided expression returns void");
+    }
+    switch(expr.tag) {
+        case BLOK_TAG_BOOL:
+        case BLOK_TAG_INT:
+        case BLOK_TAG_NIL:
+            blok_obj_fprint(s, s->out, expr, BLOK_STYLE_CODE);
+            break;
+        case BLOK_TAG_LIST:
+            blok_compiler_codegen_expression_list(s, expr);
+            break;
+        case BLOK_TAG_SYMBOL:
+            //TODO do something more nuanced here
+            fprintf(s->out, "%s", blok_symbol_get_data(s, blok_symbol_from_obj(expr)).buf);
+            break;
+        default:
+            LOG("\n%s\n", blok_tag_get_name(expr.tag));
+            TODO("");
+    }
+
     TODO("");
 }
 
-void blok_compiler_codegen_when(blok_State *s, blok_ListRef args) {
+void blok_compiler_codegen_primitive_when(blok_State *s, blok_ListRef args) {
     assert(args.len >= 2);
-    CODEGEN_INDENT(s);
     fprintf(s->out, "if (");
+    //puts("\nwhen first argument:>>");
+    //blok_obj_print(s, args.ptr[0], BLOK_STYLE_CODE);
+    //puts("");
     blok_compiler_codegen_expression(s, args.ptr[0]);
     fprintf(s->out, ") {\n");
     s->indent++;
@@ -464,11 +533,33 @@ void blok_compiler_codegen_when(blok_State *s, blok_ListRef args) {
 //refactor toplevel_primitives so that 
 //they show an error inside expression codegen, rather than 
 //just simply being undefined outside of toplevel s-expressions
+//
+
+void blok_compiler_codegen_primitive_expr(blok_State * s, blok_ListRef args) {
+    if(args.len != 3) {
+        blok_fatal_error(NULL, "Expected arguments to #expr in the form (#expr value operator value)");
+    }
+
+    blok_Obj lhs = args.ptr[0];
+    blok_Obj operator = args.ptr[1];
+    blok_Obj rhs = args.ptr[2];
+
+    //TODO vet that the chosen operator is a valid c operator
+
+    fprintf(s->out, "(");
+    blok_compiler_codegen_expression(s, lhs);
+    fprintf(s->out, " %s ", blok_symbol_get_data(s, blok_symbol_from_obj(operator)).buf);
+    blok_compiler_codegen_expression(s, rhs);
+    fprintf(s->out, ")");
+}
 
 void blok_compiler_codegen_primitive(blok_State *s, const blok_Primitive * prim, blok_ListRef args) {
     switch(prim->tag) {
         case BLOK_PRIMITIVE_WHEN:
-            blok_compiler_codegen_when(s, args);
+            blok_compiler_codegen_primitive_when(s, args);
+            break;
+        case BLOK_PRIMITIVE_EXPR:
+            blok_compiler_codegen_primitive_expr(s, args);
             break;
         default:
             TODO("implement");
@@ -477,21 +568,27 @@ void blok_compiler_codegen_primitive(blok_State *s, const blok_Primitive * prim,
 }
 
 void blok_compiler_codegen_statement(blok_State * s, blok_Obj statement) {
+    CODEGEN_INDENT(s);
+    if(statement.tag != BLOK_TAG_LIST) {
+        blok_fatal_error(&statement.src_info, "Expected s-expression");
+    }
     blok_ListRef stmt = blok_list_from_obj(statement)->items;
     if(stmt.len < 1) {
-        blok_fatal_error(&statement.src_info, "empty statement");
+        blok_fatal_error(&statement.src_info, "empty statementession");
     }
     blok_Obj sexpr_head = blok_evaluator_eval(s, stmt.ptr[0]);
     blok_ListRef args = blok_slice_tail(stmt, 1);
+    assert(args.len != stmt.len);
     switch(sexpr_head.tag) {
         case BLOK_TAG_PRIMITIVE:
             blok_compiler_codegen_primitive(s, blok_primitive_from_obj(sexpr_head), args);
             break;
         case BLOK_TAG_FUNCTION:
-            TODO("codegen function call");
+            TODO("codegen function call statement");
         default:
             blok_fatal_error(&statement.src_info, "Invalid statement");
     }
+    blok_compiler_codegen_expression(s, statement);
 }
 
 void blok_compiler_codegen_body(blok_State * s, blok_ListRef args) {

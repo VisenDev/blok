@@ -251,6 +251,7 @@ typedef enum {
     BLOK_PRIMITIVE_PRINT_INT,
     BLOK_PRIMITIVE_RETURN,
     BLOK_PRIMITIVE_WHEN,
+    BLOK_PRIMITIVE_EXPR,
 } blok_PrimitiveTag;
 
 typedef struct {
