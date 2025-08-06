@@ -42,15 +42,30 @@ void blok_state_create_global_primitive(blok_State * s, blok_Primitive prim) {
     blok_state_create_global(s, blok_symbol_get_data(s, prim.name).buf, blok_obj_from_primitive(mem));
 }
 
-bool blok_state_lookup(blok_State * s, blok_Symbol sym, blok_Obj * result) {
+bool blok_compiler_lookup_symbol(const blok_State * s, blok_Symbol sym, blok_Obj * result) {
     blok_Binding * it = NULL;
-    blok_vec_find(it, &s->globals, it->name == sym);
+    blok_vec_find(it, &s->locals, it->name == sym);
     if(it == NULL) {
-        return false;
+        blok_vec_find(it, &s->globals, it->name == sym);
+        if(it == NULL) {
+            goto failure;
+        } else {
+            goto success;
+        }
     } else {
-        *result = it->value;
-        return true;
+        goto success;
     }
+
+failure:
+    *result = blok_make_nil();
+    return false;
+
+success:
+    *result = it->value;
+    printf("Symbol %s is bound to ", blok_symbol_get_data(s, sym).buf);
+    blok_obj_print(s, it->value, BLOK_STYLE_CODE);
+    printf("\n");
+    return true;
 }
 
 blok_State blok_state_init(void) {
@@ -268,6 +283,7 @@ blok_Type blok_compiler_infer_typeof_expr_list(blok_State * s, blok_SourceInfo *
 
 blok_Type blok_compiler_infer_typeof_expr_symbol(blok_State * s, blok_SourceInfo * src, blok_Symbol sym) {
     (void) s;
+    TODO("update this function to use the more advanced symbol lookup");
     blok_Binding * it = NULL;
     blok_vec_find(it, &s->globals, sym == it->name);
     if(it == NULL) {
@@ -361,7 +377,7 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Si
     //BLOK_LOG("args are valid!\n");
 }
 
-blok_Obj blok_evaluator_eval(blok_State * s, blok_Obj obj) {
+blok_Obj blok_compiler_comptime_eval(blok_State * s, blok_Obj obj) {
     blok_Obj result = blok_make_nil();
     switch(obj.tag) {
         case BLOK_TAG_BOOL:
@@ -370,7 +386,7 @@ blok_Obj blok_evaluator_eval(blok_State * s, blok_Obj obj) {
         case BLOK_TAG_STRING:
             return obj;
         case BLOK_TAG_SYMBOL:
-            if(!blok_state_lookup(s, obj.as.data, &result)) {
+            if(!blok_compiler_lookup_symbol(s, obj.as.data, &result)) {
                 blok_SymbolData data = blok_symbol_get_data(s, obj.as.data);
                 blok_fatal_error(&obj.src_info, "Undefined symbol: %s", data.buf);
             }
@@ -381,13 +397,14 @@ blok_Obj blok_evaluator_eval(blok_State * s, blok_Obj obj) {
     }
 }
 
-void blok_compiler_compile_primive_let(blok_State * s, blok_ListRef args) {
+void blok_compiler_compile_toplevel_primitive_let(blok_State * s, blok_ListRef args) {
     assert(args.len == 2);
     blok_Symbol name = blok_symbol_from_obj(args.ptr[0]);
+
     blok_Binding b = (blok_Binding) {
         .name = name,
         .type = blok_compiler_infer_typeof_expr(s, &args.ptr[0].src_info, args.ptr[1]),
-        .value = blok_evaluator_eval(s, args.ptr[1]),
+        .value = blok_compiler_comptime_eval(s, args.ptr[1]),
     };
     blok_Binding * it = NULL;
     blok_vec_find(it, &s->globals, it->name == name);
@@ -422,17 +439,56 @@ void blok_compiler_codegen_identifier(blok_State * s, blok_Symbol symbol) {
     fprintf(s->out, "%s", sym.buf);
 }
 
-void blok_compiler_codegen_param(blok_State * s, blok_List * param) {
-    assert(param->items.len == 2);
-    blok_Type type = blok_type_from_obj(blok_evaluator_eval(s, param->items.ptr[0]));
-    blok_Symbol name = blok_symbol_from_obj(param->items.ptr[1]);
-    blok_compiler_codegen_type(s, type);
-    fprintf(s->out, " ");
-    blok_compiler_codegen_identifier(s, name);
+typedef struct {
+    blok_Type type;
+    blok_Symbol name;
+} blok_ParameterDefinition;
+
+blok_ParameterDefinition blok_compiler_parse_parameter_definition(blok_State * s, blok_Obj parameter_description_list) {
+    if(parameter_description_list.tag != BLOK_TAG_LIST) {
+        blok_fatal_error(&parameter_description_list.src_info, "Invalid parameter description");
+    }
+    blok_ListRef p = blok_list_from_obj(parameter_description_list)->items;
+    if(p.len != 2) {
+        blok_fatal_error(&parameter_description_list.src_info, "invalid parameter list length");
+    }
+    blok_Obj type_name_obj = p.ptr[0];
+    if(type_name_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&type_name_obj.src_info, "Type name is not a symbol");
+    }
+    blok_Obj type_obj = {0};
+    if(!blok_compiler_lookup_symbol(s, blok_symbol_from_obj(type_name_obj), &type_obj)) {
+        blok_fatal_error(&type_name_obj.src_info, "Undefined symbol");
+    }
+    if(type_obj.tag != BLOK_TAG_TYPE) {
+        blok_obj_print(s, type_name_obj, BLOK_STYLE_CODE);
+        blok_obj_print(s, type_obj, BLOK_STYLE_CODE);
+        blok_fatal_error(&type_name_obj.src_info, "Not a type: %s", blok_tag_get_name(type_obj.tag));
+    }
+    blok_Type type = blok_type_from_obj(type_obj);
+
+    blok_Obj name_obj = p.ptr[1];
+    if(name_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&name_obj.src_info, "Parameter name is not a symbol");
+    }
+    return (blok_ParameterDefinition) {
+        .type = type,
+        .name = blok_symbol_from_obj(name_obj),
+    };
 }
 
-void blok_compiler_codegen_params(blok_State * s, blok_List * p) {
+void blok_compiler_codegen_param(blok_State * s, blok_ParameterDefinition param) {
+    blok_compiler_codegen_type(s, param.type);
+    fprintf(s->out, " ");
+    blok_compiler_codegen_identifier(s, param.name);
+}
+
+void blok_compiler_compile_params(blok_State * s, blok_Obj params) {
     //blok_ListRef params = params_list->items;
+    if(params.tag != BLOK_TAG_LIST)  {
+        blok_fatal_error(&params.src_info, "parameters are not list");
+    }
+    blok_List * p = blok_list_from_obj(params);
     fprintf(s->out, "(");
     bool first = true;
     for(blok_Obj * obj = p->items.ptr; obj < p->items.ptr + p->items.len; ++obj) {
@@ -444,13 +500,15 @@ void blok_compiler_codegen_params(blok_State * s, blok_List * p) {
         //allow non nested list for functions with a single parameter
         if(obj->tag != BLOK_TAG_LIST) {
             if(first) {
-                blok_compiler_codegen_param(s, p);
+                blok_ParameterDefinition def = blok_compiler_parse_parameter_definition(s, params);
+                blok_compiler_codegen_param(s, def);
                 break;
             } else {
                 blok_fatal_error(&obj->src_info, "Expected list, found %s", blok_tag_get_name(obj->tag));
             }
         } else {
-            blok_compiler_codegen_param(s, blok_list_from_obj(*obj));
+            blok_ParameterDefinition def = blok_compiler_parse_parameter_definition(s, *obj);
+            blok_compiler_codegen_param(s, def);
         }
         first = false;
     }
@@ -474,9 +532,11 @@ void blok_compiler_codegen_expression_list(blok_State * s, blok_Obj sexpr) {
     if(l->items.len <= 0) {
         blok_fatal_error(&sexpr.src_info, "Empty expression");
     }
-    blok_Obj sexpr_head = {0};
     blok_ListRef args = blok_slice_tail(l->items, 1);
-    blok_state_lookup(s, blok_symbol_from_obj(l->items.ptr[0]), &sexpr_head);
+    blok_Obj sexpr_head = {0};
+    if(!blok_compiler_lookup_symbol(s, blok_symbol_from_obj(l->items.ptr[0]), &sexpr_head)) {
+        blok_fatal_error(&sexpr.src_info, "Unknown symbol");
+    }
     if(sexpr_head.tag == BLOK_TAG_PRIMITIVE) {
         blok_compiler_codegen_primitive(s, blok_primitive_from_obj(sexpr_head), args);
     } else if(sexpr_head.tag == BLOK_TAG_FUNCTION) {
@@ -576,7 +636,14 @@ void blok_compiler_codegen_statement(blok_State * s, blok_Obj statement) {
     if(stmt.len < 1) {
         blok_fatal_error(&statement.src_info, "empty statementession");
     }
-    blok_Obj sexpr_head = blok_evaluator_eval(s, stmt.ptr[0]);
+    blok_Obj name_obj = stmt.ptr[0];
+    if(name_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&name_obj.src_info, "Expected symbol");
+    }
+    blok_Obj sexpr_head = {0};
+    if(!blok_compiler_lookup_symbol(s, blok_symbol_from_obj(name_obj), &sexpr_head)) {
+        blok_fatal_error(&name_obj.src_info, "Undefined symbol");
+    }
     blok_ListRef args = blok_slice_tail(stmt, 1);
     assert(args.len != stmt.len);
     switch(sexpr_head.tag) {
@@ -604,19 +671,65 @@ void blok_compiler_codegen_body(blok_State * s, blok_ListRef args) {
     fprintf(s->out, "}\n");
 }
 
+//blok_Type blok_compiler_lookup_type(blok_State *s, blok_Symbol typename) {
+//    blok_Obj blok_compiler_lookup_symbol(
+//    blok_Binding * it = NULL;
+//    blok_vec_find(it, &s->globals,  it->name == typename);
+//    if(it == NULL) {
+//        return -1;
+//    } else {
+//        if(blok_type_get_data(s, it->type).tag != BLOK_TYPETAG_TYPE) {
+//            return -1;
+//        } else {
+//            return blok_type_from_obj(it->value);
+//        }
+//    }
+//}
+
+void blok_compiler_compile_parameter(blok_State *s, blok_ListRef param_description) {
+    assert(param_description.len == 2);
+    blok_Symbol type_name = blok_symbol_from_obj(param_description.ptr[0]);
+    blok_Obj type;
+    if(!blok_compiler_lookup_symbol(s, type_name, &type)) {
+        blok_fatal_error(&param_description.ptr[0].src_info, "Unknown type: %s", blok_symbol_get_data(s, type_name).buf);
+    }
+    if(type.tag != BLOK_TAG_TYPE) {
+        blok_fatal_error(&param_description.ptr[0].src_info, "%s is not a type", blok_symbol_get_data(s, type_name).buf);
+    }
+    blok_Symbol name = blok_symbol_from_obj(param_description.ptr[1]);
+    blok_Binding binding = (blok_Binding){ .name = name, .type = blok_type_from_obj(type), .value = blok_obj_from_symbol(name)};
+    //TODO create a procedure for binding a new local
+    blok_vec_append(&s->locals, &s->persistent_arena, binding);
+} 
+
 void blok_compiler_compile_primitive_procedure(blok_State * s, blok_ListRef args) {
     assert(args.len >= 3);
-    //blok_Symbol return_type_name = blok_symbol_from_obj(args.ptr[0]);
-    blok_Obj return_type_obj = blok_evaluator_eval(s, args.ptr[0]); 
+    blok_Obj return_type_name_obj = args.ptr[0];
+    if(return_type_name_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&return_type_name_obj.src_info, "Expected symbol");
+    }
+    blok_Symbol return_type_name = blok_symbol_from_obj(args.ptr[0]);
+    blok_Obj return_type_obj = {0};
+    if(!blok_compiler_lookup_symbol(s, return_type_name, &return_type_obj)) {
+        blok_fatal_error(&return_type_name_obj.src_info, "Undefined type");
+    }
     blok_Type return_type = return_type_obj.as.data;
-    //blok_TypeData return_type_data = blok_type_get_data(s, return_type);
     blok_Symbol name = blok_symbol_from_obj(args.ptr[1]);
     blok_List * params = blok_list_from_obj(args.ptr[2]);
+
+    s->locals.items.len = 0;
+    for(blok_Obj * param = params->items.ptr; param < params->items.ptr + params->items.len; ++param) {
+        if(param->tag != BLOK_TAG_LIST) {
+            blok_fatal_error(&param->src_info, "Expected parameter description list, found %s", blok_tag_get_name(param->tag));
+        }
+        blok_compiler_compile_parameter(s, blok_list_from_obj(*param)->items);
+    }
+
 
     blok_compiler_codegen_type(s, return_type);
     fprintf(s->out, " ");
     blok_compiler_codegen_identifier(s, name);
-    blok_compiler_codegen_params(s, params);
+    blok_compiler_compile_params(s, args.ptr[2]);
     fprintf(s->out, " ");
     blok_ListRef body = blok_slice_tail(args, 3);
     blok_compiler_codegen_body(s, body);
@@ -632,7 +745,7 @@ void blok_compiler_apply_toplevel_primitive(blok_State * s, const blok_Primitive
     blok_compiler_typecheck_args(s, src, sig, args);
     switch(p->tag) {
         case BLOK_PRIMITIVE_TOPLEVEL_LET:
-            blok_compiler_compile_primive_let(s, args);
+            blok_compiler_compile_toplevel_primitive_let(s, args);
             break;
         case BLOK_PRIMITIVE_TOPLEVEL_PROCEDURE:
             blok_compiler_compile_primitive_procedure(s, args);

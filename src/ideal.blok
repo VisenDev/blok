@@ -1,6 +1,6 @@
 (#let count 10)
 
-(#procedure Int factorial (Int num)
+(#procedure Int factorial ((Int num))
     (#when (#expr num <= 1)
         (return 1)
         )

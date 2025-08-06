@@ -40,6 +40,8 @@ BLOK_NORETURN
 void blok_fatal_error_internal(
         blok_SourceInfo *src_info, const char *c_file,
         int c_line, const char *restrict fmt, ...) {
+    fflush(stdout);
+    fflush(stderr);
     fprintf(stderr, "\n\nERROR: \n    ");
     if (src_info != NULL) {
         blok_print_sourceinfo(stderr, *src_info);
@@ -274,8 +276,9 @@ typedef struct {
     
     
     FILE * out;
-    blok_Primitives toplevel_primitives;
     blok_Bindings globals;
+    blok_Bindings locals;
+    blok_Vec(blok_Primitive) toplevel_primitives;
     int indent;
 } blok_State;
 
@@ -489,6 +492,7 @@ blok_Obj blok_obj_from_string(blok_String * s) { return blok_obj_from_ptr(s, BLO
 blok_Obj blok_obj_from_function(blok_Function * f) { return blok_obj_from_ptr(f, BLOK_TAG_FUNCTION); }
 blok_Obj blok_obj_from_primitive(blok_Primitive * f) { return blok_obj_from_ptr(f, BLOK_TAG_PRIMITIVE); }
 blok_Obj blok_obj_from_type(blok_Type t) { return (blok_Obj){.tag = BLOK_TAG_TYPE, .as.data = t}; }
+blok_Obj blok_obj_from_symbol(blok_Symbol t) { return (blok_Obj){.tag = BLOK_TAG_SYMBOL, .as.data = t}; }
 
 blok_Obj blok_make_int(int32_t data) {
     return (blok_Obj){.tag = BLOK_TAG_INT, .as.data = data};
@@ -739,10 +743,10 @@ typedef enum {
     BLOK_STYLE_CODE
 } blok_Style;
 
-void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style);
+void blok_obj_fprint(const blok_State * s, FILE * fp, blok_Obj obj, blok_Style style);
 
 
-void blok_symbol_fprint(blok_State *s, FILE * fp, const blok_Symbol symbol, blok_Style style) {
+void blok_symbol_fprint(const blok_State *s, FILE * fp, const blok_Symbol symbol, blok_Style style) {
     blok_profiler_do ("symbol_fprint") {
         (void) style;
         blok_SymbolData sym = blok_symbol_get_data(s, symbol);
@@ -762,7 +766,7 @@ void blok_symbol_fprint(blok_State *s, FILE * fp, const blok_Symbol symbol, blok
     }
 }
 
-void blok_keyvalue_fprint(blok_State * s, FILE * fp, blok_KeyValue * const kv, blok_Style style) {
+void blok_keyvalue_fprint(const blok_State * s, FILE * fp, blok_KeyValue * const kv, blok_Style style) {
     blok_profiler_do ("keyvalue_fprint") {
         blok_symbol_fprint(s, fp, kv->key, style);
         fprintf(fp, ":");
@@ -792,7 +796,7 @@ void blok_fprint_escape_sequences(FILE * fp, const char * str, size_t max) {
 }
 
 
-void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) {
+void blok_obj_fprint(const blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) {
     blok_profiler_do("blok_obj_fprint") {
         switch(obj.tag) {
             case BLOK_TAG_NIL: 
@@ -843,7 +847,7 @@ void blok_obj_fprint(blok_State * s, FILE * fp, blok_Obj obj, blok_Style style) 
 }
 
 
-void blok_obj_print(blok_State * s, blok_Obj obj, blok_Style style) {
+void blok_obj_print(const blok_State * s, blok_Obj obj, blok_Style style) {
     blok_profiler_do("obj_print") blok_obj_fprint(s, stdout, obj, style);
 }
 
