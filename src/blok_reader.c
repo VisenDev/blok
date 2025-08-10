@@ -84,6 +84,7 @@ blok_Obj blok_reader_parse_string(blok_Arena * a, blok_Reader * r) {
     blok_reader_skip_char(r, '"');
     int state = BLOK_READER_STATE_BASE;
     blok_String * str = blok_arena_alloc(a, sizeof(blok_String));
+    memset(str, 0, sizeof(blok_String));
     while(1) {
         char ch = blok_reader_peek(r);
         if(blok_reader_eof(r)) blok_fatal_error(&r->src_info, "Unexpected end of file when parsing string");

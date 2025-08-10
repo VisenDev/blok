@@ -1,13 +1,22 @@
-(#let count 10)
+(#let count 100)
 
 (#procedure Int factorial ((Int num))
     (#when (#expr num <= 1)
         (return 1)
         )
-    (return (factorial (sub num 1)))
+    (return (mul num (factorial (sub num 1))))
+    )
+
+(#let name "foo")
+
+(#procedure Int fib ((Int num))
+    (#when (#expr num <= 2)
+        (return 1)
+        )
+    (return (add (fib (sub num 1)) (fib (sub num 2))))
     )
 
 (#procedure Int main ()
-    (print_int (factorial count))
+    (print_int (fib name))
     (return 0)
     )

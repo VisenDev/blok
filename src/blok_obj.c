@@ -229,18 +229,28 @@ bool blok_paramtype_equal(blok_ParamType l, blok_ParamType r) {
 //    return true;
 //}
 
+//typedef struct {
+//    //blok_Arena * arena;
+//    blok_Type signature;
+//    blok_List * params;
+//    blok_List * body;
+//} blok_Function;
+
 typedef struct {
-    //blok_Arena * arena;
     blok_Type signature;
-    blok_List * params;
-    blok_List * body;
+    blok_Symbol name;
+    blok_Symbol param_names[BLOK_PARAMETER_COUNT_MAX];
+    blok_ListRef body;
 } blok_Function;
+
 
 typedef struct {
     blok_Symbol name;
     blok_Type type;
     blok_Obj value;
+    bool comptime_known;
 } blok_Binding;
+
 
 typedef blok_Vec(blok_KeyValue) blok_AList;
 typedef blok_Vec(blok_Binding) blok_Bindings;
@@ -250,6 +260,9 @@ typedef enum {
     BLOK_PRIMITIVE_TOPLEVEL_PROCEDURE,
     BLOK_PRIMITIVE_PRINT_INT,
     BLOK_PRIMITIVE_RETURN,
+    BLOK_PRIMITIVE_SUB,
+    BLOK_PRIMITIVE_ADD,
+    BLOK_PRIMITIVE_MUL,
     BLOK_PRIMITIVE_WHEN,
     BLOK_PRIMITIVE_EXPR,
 } blok_PrimitiveTag;
@@ -523,12 +536,12 @@ blok_Function * blok_function_allocate(blok_Arena * a) {
 }
 
 blok_List * blok_list_copy(blok_Arena * destination_scope, blok_List const * const list);
-blok_Obj blok_make_function(blok_Arena * a, blok_List * params, blok_List * body) {
-    blok_Function * result = blok_function_allocate(a);
-    result->params = blok_list_copy(a, params);
-    result->body = blok_list_copy(a, body);
-    return blok_obj_from_function(result);
-}
+//blok_Obj blok_make_function(blok_Arena * a, blok_List * params, blok_List * body) {
+//    blok_Function * result = blok_function_allocate(a);
+//    result->params = blok_list_copy(a, params);
+//    result->body = blok_list_copy(a, body);
+//    return blok_obj_from_function(result);
+//}
 
 
 blok_List * blok_list_allocate(blok_Arena * a, int32_t initial_capacity) {
@@ -675,7 +688,7 @@ blok_List * blok_list_copy(blok_Arena * a, blok_List const * const list) {
 blok_String * blok_string_copy(blok_Arena * a, blok_String * str) {
     blok_profiler_start("blok_string_copy");
     blok_String * result = blok_arena_alloc(a, sizeof(blok_String));
-    memset(result, 0, sizeof(blok_List));
+    memset(result, 0, sizeof(blok_String));
     blok_vec_foreach(char, ch, str) {
         blok_vec_append(result, a, *ch);
     }
@@ -693,15 +706,15 @@ blok_KeyValue * blok_keyvalue_copy(blok_Arena * destination_scope, blok_KeyValue
     return result;
 }
 
-blok_Function * blok_function_copy(blok_Arena * destination_scope, blok_Function * function) {
-    blok_profiler_start("blok_function_copy");
-    blok_Function * result = blok_function_allocate(destination_scope);
-    result->body = blok_list_copy(destination_scope, function->body);
-    result->params = blok_list_copy(destination_scope, function->params);
-    blok_profiler_stop("blok_function_copy");
-    return result;
-}
-
+//blok_Function * blok_function_copy(blok_Arena * destination_scope, blok_Function * function) {
+//    blok_profiler_start("blok_function_copy");
+//    blok_Function * result = blok_function_allocate(destination_scope);
+//    result->body = blok_list_copy(destination_scope, function->body);
+//    result->params = blok_list_copy(destination_scope, function->params);
+//    blok_profiler_stop("blok_function_copy");
+//    return result;
+//}
+//
 /* All objects use value semantics, so they should be copied when being assigned
  * or passed as parameters
  */
@@ -729,7 +742,8 @@ blok_Obj blok_obj_copy(blok_Arena * destination_scope, blok_Obj obj) {
             blok_fatal_error(NULL, "TODO");
             break;
         case BLOK_TAG_FUNCTION:
-            result = blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
+            TODO("copy function");
+            //result = blok_obj_from_function(blok_function_copy(destination_scope, blok_function_from_obj(obj)));
             break;
         case BLOK_TAG_TYPE:
             blok_fatal_error(NULL, "TODO");
