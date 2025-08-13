@@ -25,14 +25,14 @@ void blok_slice_run_tests(void) {
         blok_Slice(int) slice = blok_slice_from_array(buf);
         for(int i = 0; i < slice.len; ++i) {
             blok_slice_get(slice, i) = i;
-            printf("%d", blok_slice_get(slice, i));
+            //printf("%d", blok_slice_get(slice, i));
         }
-        printf("\n");
+        //printf("\n");
         blok_Slice(int) subrange = blok_slice_tail(slice, 5);
         blok_slice_foreach(int, it, subrange) {
-            printf("%d", *it);
+            //printf("%d", *it);
         }
-        printf("\n");
+        //printf("\n");
         (void)subrange;
 
     }

@@ -107,9 +107,9 @@ failure:
 
 success:
     *result = *it;
-    printf("Symbol %s is bound to ", blok_symbol_get_data(s, sym).buf);
-    blok_obj_print(s, it->value, BLOK_STYLE_CODE);
-    printf("\n");
+    //printf("Symbol %s is bound to ", blok_symbol_get_data(s, sym).buf);
+    //blok_obj_print(s, it->value, BLOK_STYLE_CODE);
+    //printf("\n");
     return true;
 }
 
@@ -479,6 +479,70 @@ void blok_compiler_typecheck_args(blok_State * s, blok_SourceInfo * src, blok_Si
     //BLOK_LOG("args are valid!\n");
 }
 
+blok_Obj blok_compiler_comptime_eval(blok_State * s, blok_Obj obj);
+
+
+blok_Obj blok_compiler_comptime_eval_primitive(blok_State * s, const blok_Primitive * prim, blok_ListRef args) {
+    (void)s;
+    (void)args;
+    switch(prim->tag) {
+        case BLOK_PRIMITIVE_ADD:
+            return blok_make_nil();
+        default:
+            TODO("");
+    }
+}
+
+
+blok_Obj blok_compiler_comptime_eval_function(blok_State * s, const blok_Function * fn, blok_ListRef args) {
+    (void)args;
+    (void)fn;
+    int checkpoint = s->locals.items.len;
+    (void)checkpoint;
+
+    TODO("Bind parameters to local variables");
+
+    blok_slice_foreach(blok_Obj, it, args) {
+        
+    }
+
+    TODO("");
+}
+
+blok_Obj blok_compiler_comptime_eval_list(blok_State *s, blok_Obj obj) {
+    assert(obj.tag == BLOK_TAG_LIST);
+    blok_ListRef l = blok_list_from_obj(obj)->items;
+    assert(l.len >= 0);
+
+    if(l.len == 0) {
+        blok_fatal_error(&obj.src_info, "Cannot evaluate empty list");
+    }
+
+
+    blok_Obj head_obj = l.ptr[0];
+    if(head_obj.tag != BLOK_TAG_SYMBOL) {
+        blok_fatal_error(&obj.src_info, "Expected symbol");
+    }
+    blok_Obj head_value = blok_compiler_comptime_eval(s, head_obj);
+    if(head_value.tag == BLOK_TAG_FUNCTION) {
+        blok_Function * fn = blok_function_from_obj(head_value);
+        blok_ListRef args = blok_slice_tail(l, 1);
+        blok_Signature sig = blok_signature_from_type(s, fn->signature);
+        blok_compiler_typecheck_args(s, &obj.src_info, sig, args);
+        return blok_compiler_comptime_eval_function(s, blok_function_from_obj(head_value), args);
+    } else if(head_value.tag == BLOK_TAG_PRIMITIVE) {
+        blok_Primitive * prim = blok_primitive_from_obj(head_value);
+        blok_ListRef args = blok_slice_tail(l, 1);
+        blok_Signature sig = blok_signature_from_type(s, prim->signature);
+        blok_compiler_typecheck_args(s, &obj.src_info, sig, args);
+        return blok_compiler_comptime_eval_primitive(s, blok_primitive_from_obj(head_value), args);
+    } else {
+        blok_fatal_error(&head_value.src_info, "Cannot evaluate an object of this type");
+    }
+
+
+}
+
 blok_Obj blok_compiler_comptime_eval(blok_State * s, blok_Obj obj) {
     blok_Binding b = {0};
     switch(obj.tag) {
@@ -493,6 +557,9 @@ blok_Obj blok_compiler_comptime_eval(blok_State * s, blok_Obj obj) {
                 blok_fatal_error(&obj.src_info, "Undefined symbol: %s", data.buf);
             }
             return b.value;
+        case BLOK_TAG_LIST:
+            return blok_compiler_comptime_eval_list(s, obj);
+
         default:
             LOG("%s\n", blok_tag_get_name(obj.tag));
             TODO("IMPLEMENT EVALUATION FOR THESE TYPES");
@@ -664,7 +731,7 @@ void blok_compiler_codegen_expression_symbol(blok_State *s, blok_Obj symbol_obj)
         blok_fatal_error(&symbol_obj.src_info, "Undefined symbol");
     }
 
-    blok_binding_print(s, &result);
+    //blok_binding_print(s, &result);
     //printf("codegen expr symbol: ");
     //blok_obj_print(s, symbol_obj, BLOK_STYLE_CODE);
     //puts("");
@@ -688,9 +755,9 @@ void blok_compiler_codegen_expression(blok_State * s, blok_Obj expr) {
     //    printf("\n");
     //    blok_fatal_error(&expr.src_info, "provided expression returns void");
     //}
-    printf("codegen expr: ");
-    blok_obj_print(s, expr, BLOK_STYLE_CODE);
-    puts("");
+    //printf("codegen expr: ");
+    //blok_obj_print(s, expr, BLOK_STYLE_CODE);
+    //puts("");
 
     switch(expr.tag) {
         case BLOK_TAG_BOOL:
@@ -1074,7 +1141,7 @@ blok_Bindings blok_compiler_toplevel(blok_State * s, blok_List * toplevel) {
     fprintf(s->out, "#include <stdio.h>\n");
     for(int32_t i = 0; i < toplevel->items.len; ++i) {
         blok_Obj sexpr = toplevel->items.ptr[i];
-        {
+        if(0) {
             printf("Compiling: ");
             blok_obj_print(s, sexpr, BLOK_STYLE_CODE);
             printf("\n");

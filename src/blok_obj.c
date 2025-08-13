@@ -12,18 +12,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "blok_exit.c"
 #include "blok_arena.c"
 #include "blok_vec.c"
 #include "blok_profiler.c"
 
-#define BLOK_NORETURN __attribute__((noreturn))
 #define BLOK_LOG(...) do { fprintf(stderr, "LOG:" __VA_ARGS__ ); fflush(stderr); } while(0)
 
 BLOK_NORETURN 
 void blok_abort(void) {
     fflush(stdout);
     fflush(stderr);
-    exit(1);
+    blok_exit(1);
 }
 
 typedef struct {
