@@ -7,9 +7,17 @@
     (return (mul num (factorial (sub num 1))))
     )
 
+(#define foo bar)
+
 (#let id (factorial count))
 
-(#procedure Int main ()
-    (print_int id)
-    (return 0)
+(#macro Void #unless {Bool cond, Obj body...}
+    (return {#when (not $cond) $$body})
     )
+
+(#procedure Int main {} {
+    (#unless {#expr id < 40}
+        (print_int id)
+        )
+    (return 0)
+    })

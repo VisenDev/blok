@@ -3,7 +3,7 @@
 " Maintainer: Robert Burnett
 
 if exists("b:current_syntax")
-  finish
+  " finish
 endif
 
 " Comments
@@ -27,7 +27,7 @@ highlight link blokColon Keyword
 "highlight link blokSexprHeader Keyword
 
 " Parentheses
-syntax match blokParen /[()]/ containedin=ALLBUT,blokSexprHeader
+syntax match blokParen /[({})]/ containedin=ALLBUT,blokSexprHeader
 highlight link blokParen Delimiter 
 
 " Types
@@ -37,7 +37,8 @@ highlight link blokMacro Keyword
 syntax match blokType /\<[A-Z][A-Za-z0-9_]*\>[\[\]]*/ containedin=ALLBUT,blokMacro
 highlight link blokType Identifier
 
-
+syntax match blokUnquote /[$][A-Za-z0-9_]*/
+highlight link blokUnquote String
 
 
 
